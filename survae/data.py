@@ -157,3 +157,24 @@ def get_spatial_mnist(size: int, n: int = 50, flatten=True):
         sampled_points_all_images.append(sampled_points)
 
     return torch.tensor(np.array(sampled_points_all_images))
+
+
+def spiral(n: int, radius: int = 2, angle: float = 5.1, noise: float = 0.2):
+    # uniformly sample points on a line
+    x_axis = torch.rand(n) * radius
+
+    # add y-axis with gaussian noise
+    line = torch.stack((x_axis, x_axis * torch.normal(torch.zeros_like(x_axis), noise * torch.ones_like(x_axis))),
+                       dim=1)
+
+    # add rotation
+    angles = line.norm(dim=1) * angle
+    points_cos = torch.cos(angles)
+    points_sin = torch.sin(angles)
+
+    points_x = points_cos * line[:, 0] + points_sin * line[:, 1]
+    points_y = points_sin * line[:, 0] - points_cos * line[:, 1]
+
+    points = torch.stack((points_x, points_y), dim=1)
+
+    return points

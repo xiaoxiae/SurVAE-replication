@@ -173,20 +173,17 @@ class BijectiveLayer(Layer):
 
 
 class AbsoluteUnit(Layer):
-    def __init__(self, q: torch.Tensor | float, learn_q: bool = False):
+    def __init__(self, q: torch.Tensor, learn_q: bool = False):
         '''
         Performs the absolute value inference surjection.
 
         ### Inputs:
-        * q: Initial probability to choose each entry's positive representative over the negative.
+        * q: Initial probabilities to choose each entry's positive representative over the negative. Must be of the same size as the input.
         * learn_q: Whether q should be learned alongside the rest of the SurVAE flow instead of fixed.
         '''
         super().__init__()
 
-        # TODO: if only tensor then size is shape
-
-        if isinstance(q, float):
-            q = torch.tensor(q)
+        self.size = q.shape[0]
 
         if learn_q:
             q = nn.Parameter(q)
@@ -194,23 +191,23 @@ class AbsoluteUnit(Layer):
         self.q = q
 
     def forward(self, X: torch.Tensor, return_log_likelihood: bool = False):
+        Z = abs(X)
         if return_log_likelihood:
-            ll_q = torch.ones_like(X) * self.q
-            ll_q[X < 0] = 1 - self.q
-
-            return abs(X), torch.sum(log(ll_q))
+            ll = torch.sum(log(1 - self.q[X < 0])) + torch.sum(log(self.q[not X < 0]))
+            
+            return Z, ll # TODO: do we have a problem if q is learned to be less than 0? also we should put an upper limit on it
         else:
-            return abs(X)
+            return Z
 
     def backward(self, Z: torch.Tensor):
         s = torch.sign(torch.rand_like(Z) - (1 - self.q))
         return Z * s
 
     def in_size(self) -> int | None:
-        return None
+        return self.size
 
     def out_size(self) -> int | None:
-        return None
+        return self.size
 
 
 # TODO think about putting gamma instead of exponential distribution
@@ -309,10 +306,41 @@ class SortingLayer(Layer):
         for i in range(Z.shape[0]):
             X[i] = Z[i][torch.randperm(Z.shape[1])]
 
-        return Z
+        return X
 
     def in_size(self) -> int | None:
         return None
 
     def out_size(self) -> int | None:
         return None
+
+
+class PermutationLayer(Layer):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, X: torch.Tensor, return_log_likelihood: bool = False):
+        Z = torch.zeros_like(X)
+        # randomly permute X
+        for i in range(X.shape[0]):
+            Z[i] = X[i][torch.randperm(X.shape[1])]
+
+        if return_log_likelihood:
+            return Z, 0
+        else:
+            return Z
+
+    def backward(self, Z: torch.Tensor):
+        X = torch.zeros_like(Z)
+        # randomly permute Z
+        for i in range(Z.shape[0]):
+            X[i] = Z[i][torch.randperm(Z.shape[1])]
+
+        return X
+
+    def in_size(self) -> int | None:
+        return None
+
+    def out_size(self) -> int | None:
+        return None
+

@@ -37,15 +37,18 @@ class LayerTest(unittest.TestCase):
         L = SortingLayer()
 
         for _ in range(10):
-            _X = torch.rand(10, 3)
-            _Z = L.forward(_X)
+            _X = torch.rand(300, 23)
+            _Z = L.forward(_X) # sorted
 
-            X_hat = L.backward(_Z)
-            _X_sorted = torch.sort(_X, dim=-1).values
-            _X_hat_sorted = torch.sort(X_hat, dim=-1).values
-            _Z_sorted = torch.sort(_Z, dim=-1).values
-            assert torch.allclose(_X_sorted, _X_hat_sorted)
-            assert torch.allclose(_X_sorted, _Z_sorted)
+            self.assertTrue((_X != _Z).any()) # different
+            self.assertTrue((torch.allclose(torch.sort(_X, dim=-1).values, _Z))) # actually sorted
+
+            X_hat = L.backward(_Z) # desorted
+
+            self.assertTrue((X_hat != _Z).any()) # actually desorted
+
+            # set equality
+            self.assertTrue(torch.allclose(torch.sort(X_hat, dim=-1).values, _Z))
 
     def test_dequantization(self):
         L = DequantizationLayer()
@@ -55,9 +58,23 @@ class LayerTest(unittest.TestCase):
             _X_rounded = torch.floor(_X)
             Z = L.forward(_X_rounded)  # not rounded
             _X_hat = L.backward(Z)  # rounded
-            assert torch.allclose(_X_rounded, _X_hat)
-            assert torch.allclose(_X_rounded, Z, atol=1)
+            self.assertTrue(torch.allclose(_X_rounded, _X_hat))
+            self.assertTrue(torch.allclose(_X_rounded, Z, atol=1))
 
+    def test_permutation(self):
+        L = PermutationLayer()
+        for _ in range(10):
+            _X = torch.rand(300, 23)
+            _Z = L.forward(_X)
+
+            self.assertTrue((_X != _Z).any()) # actually permuted
+            self.assertTrue(torch.allclose(torch.sort(_X, dim=-1).values,torch.sort(_Z, dim=-1).values)) # set equality
+            
+            _X_hat = L.backward(_Z) # permute again
+
+            self.assertTrue((_X_hat != _Z).any()) # actually permuted
+            self.assertTrue(torch.allclose(torch.sort(_X_hat, dim=-1).values,torch.sort(_Z, dim=-1).values)) # set equality
+            self.assertTrue(torch.allclose(torch.sort(_X, dim=-1).values,torch.sort(_X_hat, dim=-1).values))
 
 class SurvaeTest(unittest.TestCase):
     def test_survae(self):
