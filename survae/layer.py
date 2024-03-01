@@ -309,10 +309,41 @@ class SortingLayer(Layer):
         for i in range(Z.shape[0]):
             X[i] = Z[i][torch.randperm(Z.shape[1])]
 
-        return Z
+        return X
 
     def in_size(self) -> int | None:
         return None
 
     def out_size(self) -> int | None:
         return None
+
+
+class PermutationLayer(Layer):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, X: torch.Tensor, return_log_likelihood: bool = False):
+        Z = torch.zeros_like(X)
+        # randomly permute X
+        for i in range(X.shape[0]):
+            Z[i] = X[i][torch.randperm(X.shape[1])]
+
+        if return_log_likelihood:
+            return Z, 0
+        else:
+            return Z
+
+    def backward(self, Z: torch.Tensor):
+        X = torch.zeros_like(Z)
+        # randomly permute Z
+        for i in range(Z.shape[0]):
+            X[i] = Z[i][torch.randperm(Z.shape[1])]
+
+        return X
+
+    def in_size(self) -> int | None:
+        return None
+
+    def out_size(self) -> int | None:
+        return None
+
