@@ -1,7 +1,11 @@
+from functools import cache
+
 import numpy as np
 import torch
+from sklearn.datasets import fetch_openml
 
-# TODO: documentatio
+
+# TODO: documentation
 
 def ngon(n: int, k: int = 8, noise: float = 0.01):
     indexes = np.floor(np.random.rand(n) * k)
@@ -94,3 +98,62 @@ def checkerboard(n: int, k: int = 4):
     points -= k / 2
 
     return torch.tensor(points)
+
+
+@cache
+def _get_mnist(name='mnist_784', version=1):
+    # Fetch the MNIST dataset
+    mnist = fetch_openml(name, version=version, cache=True)
+
+    # Convert to numpy array
+    mnist_images = np.array(mnist.data)
+
+    # Normalize
+    mnist_images_normalized = mnist_images / mnist_images.sum(axis=1, keepdims=True)
+
+    return mnist_images_normalized
+
+
+def _sample_points(image: np.ndarray, n: int = 50):
+    """
+    Expects a normalized & flattened image.
+    """
+
+    # Sample n points using the pixel values as weights
+    sampled_indices = np.random.choice(len(image), size=n, p=image)
+
+    # Assume the image is square
+    n = int((image.shape[0]) ** (1 / 2))
+
+    assert n ** 2 == image.shape[0]
+
+    # Convert sampled indices back to coordinates in the original image
+    sampled_points = np.unravel_index(sampled_indices, (n, n))
+
+    sampled_points_array = np.column_stack(sampled_points)[:, ::-1] \
+        .astype(float)
+
+    # We want to uniformly sample from each pixel so offset randomly by +-0.5
+    noise = np.random.uniform(-0.5, 0.5, size=sampled_points_array.shape)
+    sampled_points_array += noise
+
+    return sampled_points_array
+
+
+def get_spatial_mnist(size: int, n: int = 50, flatten=True):
+    images = _get_mnist()[:size]
+
+    # Sample 'size' images randomly
+    images = images[np.random.choice(len(images), size=size, replace=False)]
+
+    sampled_points_all_images = []
+
+    for i, image in enumerate(images):
+        sampled_points = _sample_points(image, n)
+
+        if flatten:
+            sampled_points = sampled_points.flatten()
+
+        sampled_points_all_images.append(sampled_points)
+
+    return torch.tensor(np.array(sampled_points_all_images))
