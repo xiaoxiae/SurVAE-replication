@@ -7,7 +7,6 @@ import torch.nn as nn
 from survae.layer import Layer
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"Device: {DEVICE}")
 
 torch.set_default_device(DEVICE)
 torch.set_default_dtype(torch.double)

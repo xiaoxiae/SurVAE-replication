@@ -8,14 +8,22 @@ class LayerTest(unittest.TestCase):
     def test_bijective(self):
         b = BijectiveLayer(23, [25, 50])
         for _ in range(1000):
-            a = torch.rand(300, 23)
+            a = torch.randn(300, 23) * 3
             self.assertTrue(torch.allclose(a, b.backward(b.forward(a)), atol=1e-5))
+            self.assertTrue(torch.allclose(a, b.forward(b.backward(a)), atol=1e-5))
+
+    def test_abs(self):
+        b = AbsoluteUnit(torch.zeros(23) + 0.01)
+        for _ in range(1000):
+            a = torch.abs(torch.randn(300, 23) * 3) # TODO: it's not nice to have to call abs here...
+            self.assertTrue(torch.allclose(a, b.forward(b.backward(a)), atol=1e-5))
 
     def test_orthonormal(self):
         b = OrthonormalLayer(23)
         for _ in range(1000):
-            a = torch.rand(300, 23)
+            a = torch.randn(300, 23) * 3
             self.assertTrue(torch.allclose(a, b.backward(b.forward(a)), atol=1e-5))
+            self.assertTrue(torch.allclose(a, b.forward(b.backward(a)), atol=1e-5))
 
     def test_max(self):
         L = MaxTheLayer(3)

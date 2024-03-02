@@ -193,7 +193,14 @@ class AbsoluteUnit(Layer):
     def forward(self, X: torch.Tensor, return_log_likelihood: bool = False):
         Z = abs(X)
         if return_log_likelihood:
-            ll = torch.sum(log(1 - self.q[X < 0])) + torch.sum(log(self.q[not X < 0]))
+            pos_count = (X > 0).sum(dim=0)
+            neg_count = X.shape[0] - pos_count
+
+            ll = torch.sum(
+                pos_count * torch.log(self.q)
+                +
+                neg_count * torch.log(1 - self.q)
+            )
             
             return Z, ll # TODO: do we have a problem if q is learned to be less than 0? also we should put an upper limit on it
         else:
