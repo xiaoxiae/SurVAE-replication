@@ -351,3 +351,4 @@ class PermutationLayer(Layer):
     def out_size(self) -> int | None:
         return None
 
+

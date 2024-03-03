@@ -13,11 +13,25 @@ torch.set_default_dtype(torch.double)
 
 
 class SurVAE(Layer):
-    def __init__(self, layers: list[Layer]):
+    @staticmethod
+    def _flatten_list(nested_list: list[Layer | list]) -> list[Layer]:
+        """Flatten a nested list of layers."""
+        flattened_list = []
+        for item in nested_list:
+            if isinstance(item, Layer):
+                flattened_list.append(item)
+            else:
+                flattened_list.extend(SurVAE._flatten_list(item))
+
+        return flattened_list
+
+    def __init__(self, layers: list[Layer | list]):
         """
         General framework for the SurVAE-Flow architecture.
         """
         super().__init__()
+
+        layers = SurVAE._flatten_list(layers)
 
         self.size = None
         for l in reversed(layers):
@@ -75,7 +89,7 @@ class SurVAE(Layer):
 
             optimizer.step()
 
-            if log_count != 0 and (epoch + 1) % (epochs // log_count) == 0:
+            if epochs // log_count != 0 and (epoch + 1) % (epochs // log_count) == 0:
                 z, ll = self(x_test, return_log_likelihood=True)
                 loss_test = (0.5 * torch.sum(z ** 2) - ll) / test_size
 
