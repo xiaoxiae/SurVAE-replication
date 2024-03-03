@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from functools import cache
 
 import numpy as np
@@ -178,3 +180,49 @@ def spiral(n: int, radius: int = 2, angle: float = 5.1, noise: float = 0.2):
     points = torch.stack((points_x, points_y), dim=1)
 
     return points
+
+
+class Dataset:
+    """
+    A dataset function. Includes convenient calling and cool augmentations.
+
+    Batteries included!
+    """
+
+    @staticmethod
+    def _skew(data, axis=0, q=0.5):
+        """
+        Take a dataset and randomly (with probability q) abs() values in the given axis.
+        """
+        mask = torch.rand(data.size()[0]) < q
+        data[mask, axis] = torch.abs(data[mask, axis])
+
+        return data
+
+    def __init__(self, function, name: str | None = None):
+        self.function = function
+        self.modifiers = []
+
+        self.name = name or function.__name__
+
+    def __call__(self, n: int, **kwargs):
+        data = self.function(n, **kwargs)
+
+        for modifier in self.modifiers:
+            data = modifier(data)
+
+        return data
+
+    def get_name(self) -> str:
+        return self.name
+
+    def set_name(self, name: str):
+        self.name = name
+
+    def skew(self, axis=0, q=0.5) -> Dataset:
+        self.modifiers.append(lambda data: self._skew(data, axis=axis, q=q))
+        return self
+
+    def offset(self, vector: torch.Tensor) -> Dataset:
+        self.modifiers.append(lambda data: data + vector)
+        return self

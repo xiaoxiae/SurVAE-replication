@@ -4,6 +4,7 @@ from time import time
 import torch
 import torch.nn as nn
 
+from survae.data import Dataset
 from survae.layer import Layer
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -25,13 +26,15 @@ class SurVAE(Layer):
 
         return flattened_list
 
-    def __init__(self, layers: list[Layer | list]):
+    def __init__(self, layers: list[Layer | list], name: str | None = None):
         """
         General framework for the SurVAE-Flow architecture.
         """
         super().__init__()
 
         layers = SurVAE._flatten_list(layers)
+
+        self.name = name
 
         self.size = None
         for l in reversed(layers):
@@ -42,6 +45,12 @@ class SurVAE(Layer):
             raise ValueError(f"SurVAE has layers TODO im lazey")
 
         self.layers = nn.ModuleList(layers)
+
+    def get_name(self) -> str | None:
+        return self.name
+
+    def set_name(self, name: str):
+        self.name = name
 
     def forward(self, X: torch.Tensor, return_log_likelihood: bool = False):
         # TODO: optimize me (don't compute likelihood if it's not needed)
@@ -69,19 +78,17 @@ class SurVAE(Layer):
             # decode
             return self.backward(Z_sample)
 
-    def train(self, sample_function, batch_size=1000, test_size=10000, epochs=1000, lr=0.01, log_count=10):
+    def train(self, dataset: Dataset, batch_size=1000, test_size=10000, epochs=1000, lr=0.01, log_count=10):
         optimizer = torch.optim.Adam(params=self.parameters(), lr=lr)
 
         # TODO: remove the duplicate code in this function
-
         start_time = time()
-        x_test = sample_function(test_size)
+        x_test = dataset(test_size)
         trained_models = {}
 
-        print("Starting training...", end="")
         for epoch in range(epochs):
             optimizer.zero_grad()
-            x_train = sample_function(batch_size)
+            x_train = dataset(batch_size)
             z, ll = self(x_train, return_log_likelihood=True)
 
             loss = (0.5 * torch.sum(z ** 2) - ll) / batch_size
@@ -102,7 +109,6 @@ class SurVAE(Layer):
 
         end_time = time()  # Record end time
         duration = end_time - start_time
-        print(f" done in {duration:.2f} seconds")
 
         return trained_models
 
