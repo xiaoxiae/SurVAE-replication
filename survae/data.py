@@ -142,7 +142,7 @@ def _sample_points(image: np.ndarray, n: int = 50):
     return sampled_points_array
 
 
-def get_spatial_mnist(size: int, n: int = 50, flatten=True):
+def spatial_mnist(size: int, n: int = 50, flatten=True):
     images = _get_mnist()[:size]
 
     # Sample 'size' images randomly
