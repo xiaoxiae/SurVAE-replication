@@ -52,11 +52,11 @@ class SurVAE(Layer):
     def set_name(self, name: str):
         self.name = name
 
-    def forward(self, X: torch.Tensor, return_log_likelihood: bool = False):
+    def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
         # TODO: optimize me (don't compute likelihood if it's not needed)
         ll_total = 0
         for layer in self.layers:
-            X, ll = layer.forward(X, return_log_likelihood=True)
+            X, ll = layer.forward(X, condition, return_log_likelihood=True)
             ll_total += ll
 
         if return_log_likelihood:
@@ -64,19 +64,19 @@ class SurVAE(Layer):
         else:
             return X
 
-    def backward(self, Z: torch.Tensor):
+    def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
         for layer in reversed(self.layers):
-            Z = layer.backward(Z)
+            Z = layer.backward(Z, condition)
 
         return Z
 
-    def sample(self, n: int) -> torch.Tensor:
+    def sample(self, n: int, condition: torch.Tensor | None = None) -> torch.Tensor:
         with torch.no_grad():
             # sample from the code distribution, which should be the standard normal
             Z_sample = torch.normal(0, 1, size=(n, self.out_size()), device=DEVICE)
 
             # decode
-            return self.backward(Z_sample)
+            return self.backward(Z_sample, condition)
 
     def train(self, dataset: Dataset, batch_size=1000, test_size=10000, epochs=1000, lr=0.01, log_count=10):
         optimizer = torch.optim.Adam(params=self.parameters(), lr=lr)

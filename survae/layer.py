@@ -44,14 +44,14 @@ class Layer(nn.Module, ABC):
     # TODO: later abc __init__
 
     @abstractmethod
-    def forward(self, X: torch.Tensor, return_log_likelihood: bool = False):
+    def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
         """
         Computes the forward pass of the layer and, optionally, the log likelihood contribution as a scalar (i.e. already summed).
         """
         pass
 
     @abstractmethod
-    def backward(self, Z: torch.Tensor):
+    def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
         """
         Computes the backward pass of the layer.
         """
@@ -80,7 +80,7 @@ class OrthonormalLayer(Layer):
         self.size = size
         self.o = torch.tensor(ortho_group.rvs(size))
 
-    def forward(self, X: torch.Tensor, return_log_likelihood: bool = False):
+    def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
         Z = X @ self.o
 
         if return_log_likelihood:
@@ -88,7 +88,7 @@ class OrthonormalLayer(Layer):
         else:
             return Z
 
-    def backward(self, Z: torch.Tensor):
+    def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
         return Z @ self.o.T
 
     def in_size(self) -> int | None:
@@ -99,13 +99,14 @@ class OrthonormalLayer(Layer):
 
 
 class BijectiveLayer(Layer):
-    def __init__(self, shape: tuple[int] | int, hidden_sizes: list[int]) -> None:
+    def __init__(self, shape: tuple[int] | int, hidden_sizes: list[int], condition_size: int | None = None) -> None:
         '''
         Standard bijective block from normalizing flow architecture.
 
         ### Inputs:
         * shape: Shape of input entries, which is the same for the output.
         * hidden_sizes: Sizes of hidden layers of the nested FFNN.
+        * condition_size: Size of conditional input. If None, the layer is unconditional.
         '''
         super().__init__()
 
@@ -115,6 +116,7 @@ class BijectiveLayer(Layer):
 
         self.shape = shape
         self.size = torch.prod(torch.tensor(shape))
+        self.condition_size = condition_size
 
         assert self.size > 1, "Bijective layer size must be at least 2!"
 
@@ -125,9 +127,10 @@ class BijectiveLayer(Layer):
         # The nested FFNN takes the skip connection as input and returns
         # the translation t (of same size as the non-skip connection) and
         # scaling factor s (which is a scalar) for the linear transformation
-        self.ffnn = FFNN(self.skip_size, hidden_sizes, self.non_skip_size + 1)
+        input_size = self.skip_size if condition_size is None else self.skip_size + condition_size
+        self.ffnn = FFNN(input_size, hidden_sizes, self.non_skip_size + 1)
 
-    def forward(self, X: torch.Tensor, return_log_likelihood: bool = False):
+    def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
         # flatten input
         X = X.flatten(start_dim=1)
 
@@ -135,8 +138,14 @@ class BijectiveLayer(Layer):
         skip_connection = X[:, :self.skip_size]
         non_skip_connection = X[:, self.skip_size:]
 
+        # add conditional input
+        if condition is not None:
+            ffnn_input = torch.cat((skip_connection, condition), dim=1)
+        else:
+            ffnn_input = skip_connection
+
         # compute coefficients for linear transformation
-        coeffs = self.ffnn(skip_connection)
+        coeffs = self.ffnn(ffnn_input)
         # split output into t and pre_s
         t = coeffs[:, :-1]
         pre_s = coeffs[:, -1]
@@ -158,7 +167,7 @@ class BijectiveLayer(Layer):
         else:
             return Z
 
-    def backward(self, Z: torch.Tensor):
+    def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
         # flatten input
         Z = Z.flatten(start_dim=1)
 
@@ -166,8 +175,14 @@ class BijectiveLayer(Layer):
         skip_connection = Z[:, :self.skip_size]
         non_skip_connections = Z[:, self.skip_size:]
 
+        # add conditional input
+        if condition is not None:
+            ffnn_input = torch.cat((skip_connection, condition), dim=1)
+        else:
+            ffnn_input = skip_connection
+
         # compute coefficients for linear transformation
-        coeffs = self.ffnn(skip_connection)
+        coeffs = self.ffnn(ffnn_input)
         # split output into t and pre_s
         t = coeffs[:, :-1]
         pre_s = coeffs[:, -1]
@@ -209,7 +224,7 @@ class AbsoluteUnit(Layer):
 
         self.q = q
 
-    def forward(self, X: torch.Tensor, return_log_likelihood: bool = False):
+    def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
         Z = abs(X)
         if return_log_likelihood:
             pos_count = (X > 0).sum(dim=0)
@@ -225,7 +240,7 @@ class AbsoluteUnit(Layer):
         else:
             return Z
 
-    def backward(self, Z: torch.Tensor):
+    def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
         s = torch.sign(torch.rand_like(Z) - (1 - self.q))
         return Z * s
 
@@ -257,7 +272,7 @@ class MaxTheLayer(Layer):
         self.index_probs = index_probs
         self.lam = lam
 
-    def forward(self, X: torch.Tensor, return_log_likelihood: bool = False):
+    def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
 
         max_val, max_index = torch.max(X, dim=-1)
 
@@ -272,7 +287,7 @@ class MaxTheLayer(Layer):
         else:
             return max_val
 
-    def backward(self, Z: torch.Tensor):
+    def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
         # sample smaller values for the indices from exponential distribution
         exp_distr = torch.distributions.exponential.Exponential(self.lam)
 
@@ -299,13 +314,15 @@ class DequantizationLayer(Layer):
     def __init__(self):
         super().__init__()
 
-    def forward(self, X: torch.Tensor, return_log_likelihood: bool = False):
-        if return_log_likelihood:
-            return X + torch.rand_like(X), 0
-        else:
-            return X + torch.rand_like(X)
+    def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
+        Z = X + torch.rand_like(X)
 
-    def backward(self, Z: torch.Tensor):
+        if return_log_likelihood:
+            return Z, 0
+        else:
+            return Z
+
+    def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
         return torch.floor(Z)
 
     def in_size(self) -> int | None:
@@ -319,14 +336,14 @@ class SortingLayer(Layer):
     def __init__(self):
         super().__init__()
 
-    def forward(self, X: torch.Tensor, return_log_likelihood: bool = False):
+    def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
         Z, _ = torch.sort(X, dim=-1)
         if return_log_likelihood:
             return Z, 0
         else:
             return Z
 
-    def backward(self, Z: torch.Tensor):
+    def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
         X = torch.zeros_like(Z)
         # randomly permute Z
         for i in range(Z.shape[0]):
@@ -345,7 +362,7 @@ class PermutationLayer(Layer):
     def __init__(self):
         super().__init__()
 
-    def forward(self, X: torch.Tensor, return_log_likelihood: bool = False):
+    def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
         Z = torch.zeros_like(X)
         # randomly permute X
         for i in range(X.shape[0]):
@@ -356,7 +373,7 @@ class PermutationLayer(Layer):
         else:
             return Z
 
-    def backward(self, Z: torch.Tensor):
+    def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
         X = torch.zeros_like(Z)
         # randomly permute Z
         for i in range(Z.shape[0]):
