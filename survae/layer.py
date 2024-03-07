@@ -352,3 +352,28 @@ class PermutationLayer(Layer):
         return None
 
 
+class Augment(Layer):
+    def __init__(self, original_size, new_size):
+        super().__init__()
+
+        self.new_size = new_size
+        self.original_size = original_size
+
+    def forward(self, X: torch.Tensor, return_log_likelihood: bool = False):
+        Z = torch.empty((len(X), self.new_size))
+        Z[:, :self.original_size] = X
+        Z[:, self.original_size:] = torch.randn(len(X), self.new_size - self.original_size)
+
+        if return_log_likelihood:
+            return Z, 0
+        else:
+            return Z
+
+    def backward(self, Z: torch.Tensor):
+        return Z[:, :self.original_size]
+
+    def in_size(self) -> int | None:
+        return self.original_size
+
+    def out_size(self) -> int | None:
+        return self.new_size
