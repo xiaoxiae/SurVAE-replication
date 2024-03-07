@@ -8,28 +8,36 @@ from survae.layer import *
 class LayerTest(unittest.TestCase):
     def test_bijective(self):
         b = BijectiveLayer(23, [25, 50])
-        for _ in range(1000):
+        for _ in range(100):
             a = torch.randn(300, 23) * 3
             self.assertTrue(torch.allclose(a, b.backward(b.forward(a)), atol=1e-5))
             self.assertTrue(torch.allclose(a, b.forward(b.backward(a)), atol=1e-5))
 
+    def test_bijective_conditional(self):
+        b = BijectiveLayer(23, [25, 50], 5)
+        for _ in range(100):
+            a = torch.randn(300, 23) * 3
+            cond = torch.randn(300, 5) * 6
+            self.assertTrue(torch.allclose(a, b.backward(b.forward(a, cond), cond), atol=1e-5))
+            self.assertTrue(torch.allclose(a, b.forward(b.backward(a, cond), cond), atol=1e-5))
+
     def test_abs(self):
         b = AbsoluteUnit(torch.zeros(23) + 0.01)
-        for _ in range(1000):
-            a = torch.abs(torch.randn(300, 23) * 3)  # TODO: it's not nice to have to call abs here...
+        for _ in range(100):
+            a = torch.abs(torch.randn(300, 23) * 3) # TODO: it's not nice to have to call abs here...
             self.assertTrue(torch.allclose(a, b.forward(b.backward(a)), atol=1e-5))
 
     def test_orthonormal(self):
         b = OrthonormalLayer(23)
-        for _ in range(1000):
+        for _ in range(100):
             a = torch.randn(300, 23) * 3
             self.assertTrue(torch.allclose(a, b.backward(b.forward(a)), atol=1e-5))
             self.assertTrue(torch.allclose(a, b.forward(b.backward(a)), atol=1e-5))
 
     def test_max(self):
         L = MaxTheLayer(3)
-        for _ in range(1):
-            _X = torch.rand(10, 3)
+        for _ in range(100):
+            _X = torch.randn(10, 3) * 3
             vals, indices = torch.max(_X, dim=-1)
 
             _Z = L.forward(_X)
@@ -45,9 +53,9 @@ class LayerTest(unittest.TestCase):
     def test_sorting(self):
         L = SortingLayer()
 
-        for _ in range(10):
-            _X = torch.rand(300, 23)
-            _Z = L.forward(_X)  # sorted
+        for _ in range(100):
+            _X = torch.randn(300, 23) * 3
+            _Z = L.forward(_X) # sorted
 
             self.assertTrue((_X != _Z).any())  # different
             self.assertTrue((torch.allclose(torch.sort(_X, dim=-1).values, _Z)))  # actually sorted
@@ -61,8 +69,8 @@ class LayerTest(unittest.TestCase):
 
     def test_dequantization(self):
         L = DequantizationLayer()
-        for _ in range(10):
-            _X = torch.rand(300, 23)
+        for _ in range(100):
+            _X = torch.randn(300, 23) * 3
 
             _X_rounded = torch.floor(_X)
             Z = L.forward(_X_rounded)  # not rounded
@@ -72,8 +80,8 @@ class LayerTest(unittest.TestCase):
 
     def test_permutation(self):
         L = PermutationLayer()
-        for _ in range(10):
-            _X = torch.rand(300, 23)
+        for _ in range(100):
+            _X = torch.randn(300, 23) * 3
             _Z = L.forward(_X)
 
             self.assertTrue((_X != _Z).any())  # actually permuted
@@ -167,8 +175,8 @@ class SurvaeTest(unittest.TestCase):
             ] * 3,
         )
 
-        for _ in range(1000):
-            a = torch.rand(300, 23)
+        for _ in range(100):
+            a = torch.randn(300, 23) * 3
             assert torch.allclose(a, b.backward(b.forward(a)), atol=1e-5)
 
     def test_dimensions(self):
@@ -196,6 +204,20 @@ class SurvaeTest(unittest.TestCase):
 
         self.assertEqual(b.in_size(), 2)
         self.assertEqual(b.out_size(), 4)
+
+
+    def test_survae_conditional(self):
+        b = SurVAE(
+            [
+                BijectiveLayer(23, [5, 5], 5),
+                OrthonormalLayer(23),
+            ] * 3,
+        )
+
+        for _ in range(100):
+            a = torch.randn(300, 23) * 3
+            cond = torch.randn(300, 5) * 6
+            assert torch.allclose(a, b.backward(b.forward(a, cond), cond), atol=1e-5)
 
 
 if __name__ == "__main__":

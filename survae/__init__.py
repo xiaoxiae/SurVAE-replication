@@ -69,33 +69,33 @@ class SurVAE(Layer):
         """Set the name of the network."""
         self.name = name
 
-    def forward(self, X: torch.Tensor, return_log_likelihood: bool = False):
+    def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
         ll_total = 0
         for layer in self.layers:
             if return_log_likelihood:
-                X, ll = layer.forward(X, return_log_likelihood=True)
+                X, ll = layer.forward(X, condition, return_log_likelihood=True)
                 ll_total += ll
             else:
-                X = layer.forward(X, return_log_likelihood=False)
+                X = layer.forward(X, condition, return_log_likelihood=False)
 
         if return_log_likelihood:
             return X, ll_total
         else:
             return X
 
-    def backward(self, Z: torch.Tensor):
+    def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
         for layer in reversed(self.layers):
-            Z = layer.backward(Z)
+            Z = layer.backward(Z, condition)
 
         return Z
 
-    def sample(self, n: int) -> torch.Tensor:
+    def sample(self, n: int, condition: torch.Tensor | None = None) -> torch.Tensor:
         with torch.no_grad():
             # sample from the code distribution, which should be the standard normal
             Z_sample = torch.normal(0, 1, size=(n, self.out_size()), device=DEVICE)
 
             # decode
-            return self.backward(Z_sample)
+            return self.backward(Z_sample, condition)
 
     def train(self, dataset: Dataset, batch_size: int, test_size: int, epochs: int, lr: float, log_period: int) \
             -> dict[int, TrainingSnapshot]:
