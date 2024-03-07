@@ -103,7 +103,7 @@ class SurVAE(Layer):
         optimizer = torch.optim.Adam(params=self.parameters(), lr=lr)
 
         def run(data):
-            z, ll = self(data, return_log_likelihood=True)
+            z, ll = self.forward(data, return_log_likelihood=True)
             loss = (0.5 * torch.sum(z ** 2) - ll) / len(data)
 
             return loss

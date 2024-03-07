@@ -5,10 +5,11 @@ from survae import Dataset
 from survae.layer import AbsoluteUnit
 from survae.train import TrainedModels
 
+SAMPLE_COUNT = 50_000
 BINS = 100
 
 
-def plot_models(models: TrainedModels, datasets: list[Dataset], sample_count=50_000):
+def plot_models(models: TrainedModels, datasets: list[Dataset], sample_count=SAMPLE_COUNT, bins=BINS):
     """Plot the results for trained models on the given datasets."""
     model_count = max([j for _, j in models]) + 1
 
@@ -19,7 +20,7 @@ def plot_models(models: TrainedModels, datasets: list[Dataset], sample_count=50_
     for i, dataset in enumerate(datasets):
         X = dataset(sample_count).cpu().numpy()
 
-        axs[i, 0].hist2d(X[:, 0], X[:, 1], bins=BINS)
+        axs[i, 0].hist2d(X[:, 0], X[:, 1], bins=bins)
         axs[i, 0].set_title(f'Data / {dataset.get_name()}')
 
     # Iterate over datasets and create heatmaps
@@ -29,7 +30,7 @@ def plot_models(models: TrainedModels, datasets: list[Dataset], sample_count=50_
 
             X = model.sample(sample_count).cpu().numpy()
 
-            axs[i, j + 1].hist2d(X[:, 0], X[:, 1], bins=BINS)
+            axs[i, j + 1].hist2d(X[:, 0], X[:, 1], bins=bins)
             axs[i, j + 1].set_title(f'{model.get_name()} / {dataset.get_name()}')
 
     # Adjust layout
