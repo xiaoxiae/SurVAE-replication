@@ -1,5 +1,5 @@
 import copy
-from time import time
+from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
@@ -11,6 +11,13 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 torch.set_default_device(DEVICE)
 torch.set_default_dtype(torch.double)
+
+
+@dataclass
+class TrainingSnapshot:
+    model_state: dict
+    training_loss: float
+    testing_loss: float
 
 
 class SurVAE(Layer):
@@ -36,28 +43,40 @@ class SurVAE(Layer):
 
         self.name = name
 
-        self.size = None
+        self.out_s = None
         for l in reversed(layers):
             if l.out_size() is not None:
-                self.size = l.out_size()
+                self.out_s = l.out_size()
                 break
         else:
-            raise ValueError(f"SurVAE has layers TODO im lazey")
+            raise ValueError(f"SurVAE doesn't have any fixed-out-size layers!")
+
+        self.in_s = None
+        for l in layers:
+            if l.in_size() is not None:
+                self.in_s = l.in_size()
+                break
+        else:
+            raise ValueError(f"SurVAE doesn't have any fixed-in-size layers!")
 
         self.layers = nn.ModuleList(layers)
 
     def get_name(self) -> str | None:
+        """Get the name of the network."""
         return self.name
 
     def set_name(self, name: str):
+        """Set the name of the network."""
         self.name = name
 
     def forward(self, X: torch.Tensor, return_log_likelihood: bool = False):
-        # TODO: optimize me (don't compute likelihood if it's not needed)
         ll_total = 0
         for layer in self.layers:
-            X, ll = layer.forward(X, return_log_likelihood=True)
-            ll_total += ll
+            if return_log_likelihood:
+                X, ll = layer.forward(X, return_log_likelihood=True)
+                ll_total += ll
+            else:
+                X = layer.forward(X, return_log_likelihood=False)
 
         if return_log_likelihood:
             return X, ll_total
@@ -78,43 +97,40 @@ class SurVAE(Layer):
             # decode
             return self.backward(Z_sample)
 
-    def train(self, dataset: Dataset, batch_size=1000, test_size=10000, epochs=1000, lr=0.01, log_count=10):
+    def train(self, dataset: Dataset, batch_size: int, test_size: int, epochs: int, lr: float, log_period: int) \
+            -> dict[int, TrainingSnapshot]:
+        """Train the SurVAE model on the given dataset."""
         optimizer = torch.optim.Adam(params=self.parameters(), lr=lr)
 
-        # TODO: remove the duplicate code in this function
-        start_time = time()
+        def run(data):
+            z, ll = self(data, return_log_likelihood=True)
+            loss = (0.5 * torch.sum(z ** 2) - ll) / len(data)
+
+            return loss
+
         x_test = dataset(test_size)
         trained_models = {}
 
         for epoch in range(epochs):
             optimizer.zero_grad()
             x_train = dataset(batch_size)
-            z, ll = self(x_train, return_log_likelihood=True)
 
-            loss = (0.5 * torch.sum(z ** 2) - ll) / batch_size
+            loss = run(x_train)
             loss.backward()
 
             optimizer.step()
 
-            if epochs // log_count != 0 and (epoch + 1) % (epochs // log_count) == 0:
-                z, ll = self(x_test, return_log_likelihood=True)
-                loss_test = (0.5 * torch.sum(z ** 2) - ll) / test_size
+            # log possibly for period and always for the last iteration
+            if (log_period != 0 and epoch % log_period == 0) or epoch == epochs - 1:
+                loss_test = run(x_test)
 
-                trained_models[epoch + 1] = (copy.deepcopy(self.state_dict()), loss.item(), loss_test.item())
-
-        # save the last one regardless
-        z, ll = self(x_test, return_log_likelihood=True)
-        loss_test = (0.5 * torch.sum(z ** 2) - ll) / test_size
-        trained_models[epoch + 1] = (self.state_dict(), loss.item(), loss_test.item())
-
-        end_time = time()  # Record end time
-        duration = end_time - start_time
+                trained_models[epoch + 1] = TrainingSnapshot(
+                    copy.deepcopy(self.state_dict()), loss.item(), loss_test.item())
 
         return trained_models
 
     def in_size(self) -> int | None:
-        # TODO: this is broken
-        return self.size
+        return self.in_s
 
     def out_size(self) -> int | None:
-        return self.size
+        return self.out_s

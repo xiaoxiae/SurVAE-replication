@@ -273,7 +273,7 @@ def spiral(n, noise=0.1, labels=False):
         return X
 
 
-def moons(n, delta: float = 0.1, labels=False):
+def moons(n, delta: float = 0.05, labels=False):
     X, y = make_moons(n_samples=n, noise=delta, random_state=42)
 
     if labels:
@@ -284,7 +284,7 @@ def moons(n, delta: float = 0.1, labels=False):
 
 def split_line(n, delta: float = 0.005, k: float = 1, labels=False):
     mu = np.array([0, 0])
-    sigma = np.array([[1, 1], [-delta, delta]])
+    sigma = np.array([[1, 1], [delta, -delta]])
 
     data = np.random.multivariate_normal(mu, sigma, n)
 
@@ -345,7 +345,11 @@ class Dataset:
 
         # Possibly shuffle data
         if self.shuffle:
-            data = data[torch.randperm(n)]
+            permutation = torch.randperm(n)
+            data = data[permutation]
+
+            if self.labels:
+                labels = labels[permutation]
 
         # Possibly modify data
         for modifier in self.modifiers:

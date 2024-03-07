@@ -37,6 +37,7 @@ class FFNN(nn.Module):
 class Layer(nn.Module, ABC):
     """
     Abstract class used as the framework for all types of layers used in the SurVAE-Flow architecture.
+
     All layers are defined in the inference direction, i.e. the 'forward' method sends elements of the
     data space X to the latent space Z, whereas the 'backward' method goes from Z to X.
     """
@@ -114,7 +115,7 @@ class BijectiveLayer(Layer):
             shape = (shape,)
 
         self.shape = shape
-        self.size = torch.prod(torch.tensor(shape))
+        self.size = torch.prod(torch.tensor(shape)).item()
 
         assert self.size > 1, "Bijective layer size must be at least 2!"
 
@@ -372,16 +373,16 @@ class PermutationLayer(Layer):
 
 
 class Augment(Layer):
-    def __init__(self, original_size, new_size):
+    def __init__(self, size, augmented_size):
         super().__init__()
 
-        self.new_size = new_size
-        self.original_size = original_size
+        self.size = size
+        self.augmented_size = augmented_size
 
     def forward(self, X: torch.Tensor, return_log_likelihood: bool = False):
-        Z = torch.empty((len(X), self.new_size))
-        Z[:, :self.original_size] = X
-        Z[:, self.original_size:] = torch.randn(len(X), self.new_size - self.original_size)
+        Z = torch.empty((len(X), self.augmented_size))
+        Z[:, :self.size] = X
+        Z[:, self.size:] = torch.randn(len(X), self.augmented_size - self.size)
 
         if return_log_likelihood:
             return Z, 0
@@ -389,10 +390,10 @@ class Augment(Layer):
             return Z
 
     def backward(self, Z: torch.Tensor):
-        return Z[:, :self.original_size]
+        return Z[:, :self.size]
 
     def in_size(self) -> int | None:
-        return self.original_size
+        return self.size
 
     def out_size(self) -> int | None:
-        return self.new_size
+        return self.augmented_size

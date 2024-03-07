@@ -171,6 +171,32 @@ class SurvaeTest(unittest.TestCase):
             a = torch.rand(300, 23)
             assert torch.allclose(a, b.backward(b.forward(a)), atol=1e-5)
 
+    def test_dimensions(self):
+        a = SurVAE(
+            [
+                [BijectiveLayer(2, [64] * 5), OrthonormalLayer(2)]
+                for _ in range(10)
+            ],
+            name="NF",
+        )
+
+        self.assertEqual(a.in_size(), 2)
+        self.assertEqual(a.out_size(), 2)
+
+        b = SurVAE(
+            [
+                Augment(2, 4),
+                BijectiveLayer(4, [64] * 5), OrthonormalLayer(4),
+                BijectiveLayer(4, [64] * 5), OrthonormalLayer(4),
+                BijectiveLayer(4, [64] * 5), OrthonormalLayer(4),
+                BijectiveLayer(4, [64] * 5),
+            ],
+            name="NF-augmented",
+        )
+
+        self.assertEqual(b.in_size(), 2)
+        self.assertEqual(b.out_size(), 4)
+
 
 if __name__ == "__main__":
     unittest.main()
