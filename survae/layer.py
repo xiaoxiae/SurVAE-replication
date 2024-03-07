@@ -81,10 +81,12 @@ class OrthonormalLayer(Layer):
         self.o = torch.tensor(ortho_group.rvs(size))
 
     def forward(self, X: torch.Tensor, return_log_likelihood: bool = False):
+        Z = X @ self.o
+
         if return_log_likelihood:
-            return X @ self.o, 0
+            return Z, 0
         else:
-            return X @ self.o
+            return Z
 
     def backward(self, Z: torch.Tensor):
         return Z @ self.o.T
@@ -97,23 +99,28 @@ class OrthonormalLayer(Layer):
 
 
 class BijectiveLayer(Layer):
-    def __init__(self, size: int, hidden_sizes: list[int]) -> None:
+    def __init__(self, shape: tuple[int] | int, hidden_sizes: list[int]) -> None:
         '''
         Standard bijective block from normalizing flow architecture.
 
         ### Inputs:
-        * size: Size of input, which is the same for the output.
+        * shape: Shape of input entries, which is the same for the output.
         * hidden_sizes: Sizes of hidden layers of the nested FFNN.
         '''
         super().__init__()
 
-        assert size > 1, "Bijective layer size must be at least 2!"
+        # transform shape variable into a more usable form
+        if isinstance(shape, int):
+            shape = (shape,)
 
-        self.size = size
+        self.shape = shape
+        self.size = torch.prod(torch.tensor(shape))
+
+        assert self.size > 1, "Bijective layer size must be at least 2!"
 
         # The size of the skip connection is half the input size, rounded down
-        self.skip_size = size // 2
-        self.non_skip_size = size - self.skip_size
+        self.skip_size = self.size // 2
+        self.non_skip_size = self.size - self.skip_size
 
         # The nested FFNN takes the skip connection as input and returns
         # the translation t (of same size as the non-skip connection) and
@@ -121,6 +128,9 @@ class BijectiveLayer(Layer):
         self.ffnn = FFNN(self.skip_size, hidden_sizes, self.non_skip_size + 1)
 
     def forward(self, X: torch.Tensor, return_log_likelihood: bool = False):
+        # flatten input
+        X = X.flatten(start_dim=1)
+
         # split input into skip and non-skip
         skip_connection = X[:, :self.skip_size]
         non_skip_connection = X[:, self.skip_size:]
@@ -140,12 +150,18 @@ class BijectiveLayer(Layer):
         # stack skip connection and transformed non-skip connection
         Z = torch.cat((skip_connection, new_connection), dim=1)
 
+        # reshape output
+        Z = Z.reshape(-1, *self.shape)
+
         if return_log_likelihood:
             return Z, torch.sum(s_log)
         else:
             return Z
 
     def backward(self, Z: torch.Tensor):
+        # flatten input
+        Z = Z.flatten(start_dim=1)
+
         # split input into skip and non-skip
         skip_connection = Z[:, :self.skip_size]
         non_skip_connections = Z[:, self.skip_size:]
@@ -162,6 +178,9 @@ class BijectiveLayer(Layer):
         new_connection = (non_skip_connections - t) / s
         # stack skip connection and transformed non-skip connection
         X = torch.cat((skip_connection, new_connection), dim=1)
+
+        # reshape output
+        X = X.reshape(-1, *self.shape)
 
         return X
 
@@ -330,7 +349,7 @@ class PermutationLayer(Layer):
         Z = torch.zeros_like(X)
         # randomly permute X
         for i in range(X.shape[0]):
-            Z[i] = X[i][torch.randperm(X.shape[1])]
+            Z[i] = X[i, ..., torch.randperm(X.shape[-1])]
 
         if return_log_likelihood:
             return Z, 0
@@ -341,7 +360,7 @@ class PermutationLayer(Layer):
         X = torch.zeros_like(Z)
         # randomly permute Z
         for i in range(Z.shape[0]):
-            X[i] = Z[i][torch.randperm(Z.shape[1])]
+            X[i] = Z[i, ..., torch.randperm(Z.shape[-1])]
 
         return X
 
@@ -350,5 +369,3 @@ class PermutationLayer(Layer):
 
     def out_size(self) -> int | None:
         return None
-
-
