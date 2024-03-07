@@ -4,44 +4,82 @@ from functools import cache
 
 import numpy as np
 import torch
-from sklearn.datasets import fetch_openml
+from sklearn.datasets import fetch_openml, make_moons
 
 
-# TODO: documentation
+def ngon(n: int, k: int = 8, noise: float = 0.01, labels=False):
+    """
+    N Gaussians in a spherical pattern.
 
-def ngon(n: int, k: int = 8, noise: float = 0.01):
+     o o
+    o   o
+    o   o
+     o o
+
+    :param k: How many dots.
+    :param noise: Gaussian noise to add to the dots.
+    """
     indexes = np.floor(np.random.rand(n) * k)
 
     cov = np.array([[noise, 0], [0, noise]])
 
-    X = np.array([(np.cos(index * 2 * np.pi / k), np.sin(index * 2 * np.pi / k)) for index in indexes])  # exact corners
+    X = np.array([(np.cos(i * 2 * np.pi / k), np.sin(i * 2 * np.pi / k)) for i in indexes])  # exact corners
 
-    X = X + np.random.multivariate_normal([0.0, 0.0], cov, n)  # corners + deviation
+    X += np.random.multivariate_normal([0.0, 0.0], cov, n)
 
-    return torch.tensor(X)
+    y = np.array([i % k for i in indexes], dtype=int)
+
+    if labels:
+        return torch.tensor(X), torch.tensor(y).int()
+    else:
+        return torch.tensor(X)
 
 
-def corners(n, r: float = 1, w: float = .5, l: float = 2):
-    assert n % 2 == 0
+def corners(n: int, middle_space: float = 1, width: float = .5, length: float = 2, labels=False):
+    """
+    4 corners.
 
+      |   |
+    --#   #--
+
+    --#   #--
+      |   |
+
+    :param middle_space: Spacing of the rectangles (i.e. space in the middle).
+    :param width:  Width of each rectangle.
+    :param length: Length of each rectangle.
+    """
     points = []
 
-    for a, b in [(l, w), (w, l)]:
+    for i, (a, b) in enumerate([(length, width), (width, length)]):
+        if n % 2 == 1 and i == 1:
+            m = n // 2 + 1
+        else:
+            m = n // 2
+
         p = np.column_stack((
-            np.random.uniform(-1, 1, size=n // 2),
-            np.random.uniform(-1, 1, size=n // 2)))
+            np.random.uniform(-1, 1, size=m),
+            np.random.uniform(-1, 1, size=m)))
 
         p[:, 0] *= a
         p[:, 1] *= b
 
-        p[:, 0][p[:, 0] < 0] -= r
-        p[:, 0][p[:, 0] > 0] += r
-        p[:, 1][p[:, 1] < 0] -= r
-        p[:, 1][p[:, 1] > 0] += r
+        p[:, 0][p[:, 0] < 0] -= middle_space
+        p[:, 0][p[:, 0] > 0] += middle_space
+        p[:, 1][p[:, 1] < 0] -= middle_space
+        p[:, 1][p[:, 1] > 0] += middle_space
 
         points.append(p)
 
-    return torch.tensor(np.concatenate(points))
+    X = torch.tensor(np.concatenate(points))
+
+    if labels:
+        signs = torch.sign(X)
+        y = (signs[:, 0] >= 0) + 2 * (signs[:, 1] < 0)
+
+        return X, y.int()
+    else:
+        return X
 
 
 def _circle(n, noise, radius):
@@ -59,39 +97,62 @@ def _circle(n, noise, radius):
     return np.column_stack((x, y)) * radius
 
 
-def circles(n: int, k: int = 4, r1: int = 1, r2: int = 1.25, noise=0.025):
-    assert n % k == 0
+def circles(n: int, k: int = 4, circle_center_radius: int = 1, circle_radius: int = 1.25, noise=0.025, labels=False):
+    """
+    K overlapping circles.
+
+    :param k: Number of circles
+    :param circle_center_radius: Distance of circle centers to origin.
+    :param circle_radius: The radius of the actual circles.
+    """
+    remainder = n % k
 
     points = []
-
+    categories = []
     for i in range(k):
         alpha = (i / k) * 2 * np.pi
 
-        x = np.cos(alpha) * r1
-        y = np.sin(alpha) * r1
+        # circle position
+        x = np.cos(alpha) * circle_center_radius
+        y = np.sin(alpha) * circle_center_radius
 
-        p = _circle(n // k, noise=noise, radius=r2)
+        if remainder == 0:
+            m = n // k
+        else:
+            m = n // k + 1
+            remainder -= 1
+
+        # circle points
+        p = _circle(m, noise=noise, radius=circle_radius)
         p[:, 0] += x
         p[:, 1] += y
 
         points.append(p)
+        categories += [i] * len(p)
 
-    return torch.tensor(np.concatenate(points))
+    if labels:
+        return torch.tensor(np.concatenate(points)), torch.tensor(categories).int()
+    else:
+        return torch.tensor(np.concatenate(points))
 
 
-def checkerboard(n: int, k: int = 4):
-    assert k % 2 == 0
+def checkerboard(n: int, k: int = 2, scale: float = 1, labels=False):
+    """A checkerboard of size k^2."""
+    k **= 2
 
     # local tile coordinates
     x_coords = np.random.uniform(0, 1, size=n)
     y_coords = np.random.uniform(0, 1, size=n)
 
     points = np.column_stack((x_coords, y_coords))
+    categories = []
 
     # move from local to global coordinates randomly
     for i in range(n):
         row_offset = np.random.randint(0, k)
         column_offset = ((np.random.randint(0, k)) * 2 + (row_offset % 2)) % k
+
+        categories.append(row_offset * k + column_offset)
 
         points[i][0] += row_offset
         points[i][1] += column_offset
@@ -99,7 +160,12 @@ def checkerboard(n: int, k: int = 4):
     # center to origin
     points -= k / 2
 
-    return torch.tensor(points)
+    X = torch.tensor(points) * scale
+
+    if labels:
+        return X, torch.tensor(categories).int()
+    else:
+        return X
 
 
 @cache
@@ -109,18 +175,15 @@ def _get_mnist(name='mnist_784', version=1):
 
     # Convert to numpy array
     mnist_images = np.array(mnist.data)
+    mnist_labels = np.array(mnist.target.astype(int))
 
     # Normalize
     mnist_images_normalized = mnist_images / mnist_images.sum(axis=1, keepdims=True)
 
-    return mnist_images_normalized
+    return mnist_images_normalized, mnist_labels
 
 
 def _sample_points(image: np.ndarray, n: int = 50):
-    """
-    Expects a normalized & flattened image.
-    """
-
     # Sample n points using the pixel values as weights
     sampled_indices = np.random.choice(len(image), size=n, p=image)
 
@@ -142,44 +205,106 @@ def _sample_points(image: np.ndarray, n: int = 50):
     return sampled_points_array
 
 
-def spatial_mnist(size: int, n: int = 50, flatten=True):
-    images = _get_mnist()[:size]
+def spatial_mnist(n: int, k: int = 50, flatten=True, labels=False):
+    """
+    Generate a spatial MNIST dataset by taking normalized MNIST images as density and sampling k points.
+
+    :param k: How many points to sample.
+    :param flatten: Whether to flatten the result.
+    """
+    images, y = _get_mnist()
 
     # Sample 'size' images randomly
-    images = images[np.random.choice(len(images), size=size, replace=False)]
+    idxs = np.random.choice(len(images), size=n, replace=False)
+    images = images[idxs]
+    y = y[idxs]
 
     sampled_points_all_images = []
 
     for i, image in enumerate(images):
-        sampled_points = _sample_points(image, n)
+        sampled_points = _sample_points(image, k)
 
         if flatten:
             sampled_points = sampled_points.flatten()
 
         sampled_points_all_images.append(sampled_points)
 
-    return torch.tensor(np.array(sampled_points_all_images))
+    X = torch.tensor(np.array(sampled_points_all_images))
+    y = torch.tensor(y)
+
+    if labels:
+        return X, y.int()
+    else:
+        return X
 
 
-def spiral(n: int, radius: int = 2, angle: float = 5.1, noise: float = 0.2):
-    # uniformly sample points on a line
-    x_axis = torch.rand(n) * radius
+def spiral(n, noise=0.1, labels=False):
+    """
+    Generate a double spiral.
+    """
+    t = (torch.linspace(0, 1, n // 2 + n % 2)) ** (1 / 2) * np.pi * 3
+    r = (torch.linspace(0, 1, n // 2 + n % 2)) ** (1 / 2) * 5  # Linearly increasing radius
 
-    # add y-axis with gaussian noise
-    line = torch.stack((x_axis, x_axis * torch.normal(torch.zeros_like(x_axis), noise * torch.ones_like(x_axis))),
-                       dim=1)
+    # Spiral 1
+    x1 = (r * torch.cos(t))
+    y1 = (r * torch.sin(t))
 
-    # add rotation
-    angles = line.norm(dim=1) * angle
-    points_cos = torch.cos(angles)
-    points_sin = torch.sin(angles)
+    # Spiral 2, rotating by 180 degrees
+    x2 = r * torch.cos(t - np.pi)
+    y2 = r * torch.sin(t - np.pi)
 
-    points_x = points_cos * line[:, 0] + points_sin * line[:, 1]
-    points_y = points_sin * line[:, 0] - points_cos * line[:, 1]
+    # Add Gaussian noise if specified
+    if noise > 0.0:
+        x1 += torch.randn_like(t) * noise
+        y1 += torch.randn_like(t) * noise
+        x2 += torch.randn_like(t) * noise
+        y2 += torch.randn_like(t) * noise
 
-    points = torch.stack((points_x, points_y), dim=1)
+    data1 = torch.stack((x1, y1), dim=1)
+    data2 = torch.stack((x2, y2), dim=1)
+    double_spiral_data = torch.cat((data1, data2), dim=0)
 
-    return points
+    X = double_spiral_data[:n]
+
+    if labels:
+        y = torch.tensor([0] * len(data1) + [1] * len(data2))[:n]
+        return X, y.int()
+    else:
+        return X
+
+
+def moons(n, delta: float = 0.1, labels=False):
+    X, y = make_moons(n_samples=n, noise=delta, random_state=42)
+
+    if labels:
+        return torch.tensor(X), torch.tensor(y).int()
+    else:
+        return torch.tensor(X)
+
+
+def split_line(n, delta: float = 0.005, k: float = 1, labels=False):
+    mu = np.array([0, 0])
+    sigma = np.array([[1, 1], [-delta, delta]])
+
+    data = np.random.multivariate_normal(mu, sigma, n)
+
+    X = torch.tensor(data)
+    y = torch.zeros(n)
+
+    x_values = X[:, 0]
+    y_values = X[:, 1]
+
+    y_values[x_values >= 0] += k
+    y_values[x_values < 0] -= k
+
+    y[x_values >= 0] = 1
+
+    X[:, 1] = y_values
+
+    if labels:
+        return X, y.int()
+    else:
+        return X
 
 
 class Dataset:
@@ -188,6 +313,16 @@ class Dataset:
 
     Batteries included!
     """
+
+    def __init__(self, function, name: str | None = None, labels=False, shuffle=True, **kwargs):
+        self.function = function
+        self.modifiers = []
+
+        self.kwargs = kwargs
+        self.labels = labels
+        self.shuffle = shuffle
+
+        self.name = name or function.__name__
 
     @staticmethod
     def _skew(data, axis=0, q=0.5):
@@ -199,30 +334,44 @@ class Dataset:
 
         return data
 
-    def __init__(self, function, name: str | None = None):
-        self.function = function
-        self.modifiers = []
+    def __call__(self, n: int):
+        result = self.function(n, labels=self.labels, **self.kwargs)
 
-        self.name = name or function.__name__
+        # Get data / data and labels
+        if self.labels:
+            data, labels = result
+        else:
+            data = result
 
-    def __call__(self, n: int, **kwargs):
-        data = self.function(n, **kwargs)
+        # Possibly shuffle data
+        if self.shuffle:
+            data = data[torch.randperm(n)]
 
+        # Possibly modify data
         for modifier in self.modifiers:
             data = modifier(data)
 
-        return data
+        # Return data / data + labels
+
+        if self.labels:
+            return data, labels
+        else:
+            return data
 
     def get_name(self) -> str:
+        """Get the dataset name."""
         return self.name
 
     def set_name(self, name: str):
+        """Set the dataset name."""
         self.name = name
 
     def skew(self, axis=0, q=0.5) -> Dataset:
+        """Apply a modifier that flips value of the dataset in the specified axis with probability q."""
         self.modifiers.append(lambda data: self._skew(data, axis=axis, q=q))
         return self
 
     def offset(self, vector: torch.Tensor) -> Dataset:
+        """Apply a modifier that offsets all values of the dataset by a given vector."""
         self.modifiers.append(lambda data: data + vector)
         return self

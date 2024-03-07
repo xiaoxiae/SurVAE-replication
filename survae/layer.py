@@ -201,8 +201,8 @@ class AbsoluteUnit(Layer):
                 +
                 neg_count * torch.log(1 - self.q)
             )
-            
-            return Z, ll # TODO: do we have a problem if q is learned to be less than 0? also we should put an upper limit on it
+
+            return Z, ll  # TODO: do we have a problem if q is learned to be less than 0? also we should put an upper limit on it
         else:
             return Z
 
