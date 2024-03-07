@@ -397,7 +397,7 @@ class Augment(Layer):
         self.size = size
         self.augmented_size = augmented_size
 
-    def forward(self, X: torch.Tensor, return_log_likelihood: bool = False):
+    def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
         Z = torch.empty((len(X), self.augmented_size))
         Z[:, :self.size] = X
         Z[:, self.size:] = torch.randn(len(X), self.augmented_size - self.size)
@@ -407,7 +407,7 @@ class Augment(Layer):
         else:
             return Z
 
-    def backward(self, Z: torch.Tensor):
+    def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
         return Z[:, :self.size]
 
     def in_size(self) -> int | None:
