@@ -415,3 +415,32 @@ class Augment(Layer):
 
     def out_size(self) -> int | None:
         return self.augmented_size
+
+
+class SliceLayer(Layer):
+    '''Opposite of Augment, i.e. goes from highdim to lowdim'''
+    def __init__(self, original_size, new_size):
+        super().__init__()
+
+        assert original_size >= new_size, f"Invalid inputs to Slice layer: ({original_size}, {new_size})"
+
+        self.new_size = new_size
+        self.original_size = original_size
+
+    def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
+        Z = X[..., :self.new_size]
+
+        if return_log_likelihood:
+            return Z, 0
+        else:
+            return Z
+
+    def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
+        X = torch.cat((Z, torch.randn((len(Z), self.original_size - self.new_size))), dim=1)
+        return X
+
+    def in_size(self) -> int | None:
+        return self.original_size
+
+    def out_size(self) -> int | None:
+        return self.new_size
