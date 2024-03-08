@@ -24,7 +24,7 @@ class LayerTest(unittest.TestCase):
     def test_abs(self):
         b = AbsoluteUnit(torch.zeros(23) + 0.01)
         for _ in range(100):
-            a = torch.abs(torch.randn(300, 23) * 3) # TODO: it's not nice to have to call abs here...
+            a = torch.abs(torch.randn(300, 23) * 3)  # TODO: it's not nice to have to call abs here...
             self.assertTrue(torch.allclose(a, b.forward(b.backward(a)), atol=1e-5))
 
     def test_orthonormal(self):
@@ -55,7 +55,7 @@ class LayerTest(unittest.TestCase):
 
         for _ in range(100):
             _X = torch.randn(300, 23) * 3
-            _Z = L.forward(_X) # sorted
+            _Z = L.forward(_X)  # sorted
 
             self.assertTrue((_X != _Z).any())  # different
             self.assertTrue((torch.allclose(torch.sort(_X, dim=-1).values, _Z)))  # actually sorted
@@ -97,73 +97,22 @@ class LayerTest(unittest.TestCase):
 
 
 class DatasetTest(unittest.TestCase):
-    def test_functions_no_labels(self):
-        # 2D datasets
-        for function in [ngon, corners, circles, checkerboard, spiral, moons, split_line]:
-            for n in [2, 31, 500]:
-                # Default is no label
-                data = function(n)
-                self.assertTrue(data.shape == (n, 2), function.__name__)
-
-        # Spatial MNIST
-        for function in [spatial_mnist]:
-            for n in [2, 31, 500]:
-                data = function(n)
-                self.assertTrue(data.shape == (n, 100), function.__name__)
-
-    def test_functions_labels(self):
+    def test_dataset(self):
         # all datasets
-        for function in [ngon, corners, circles, checkerboard, spiral, moons, split_line, spatial_mnist]:
-            for n in [2, 31, 500]:
-                data, labels = function(n, labels=True)
+        for dataset in [Ngon(), Corners(), Circles(), Checkerboard(), Spiral(), Moons(), SplitLine(), SpatialMNIST()]:
+            for f in [lambda d: d, lambda d: d.skew()]:
+                f(dataset)
 
-                self.assertTrue(labels.dtype == torch.int, function.__name__)
-                self.assertTrue(len(data) == len(labels), function.__name__)
+                for n in [2, 31, 500]:
+                    data, labels = dataset.sample(n, labels=True)
 
-    def test_datasets_no_labels(self):
-        # 2D datasets
-        for function in [ngon, corners, circles, checkerboard, spiral, moons, split_line]:
-            dataset = Dataset(function)
+                    self.assertTrue(labels.dtype == torch.int, dataset.get_name())
+                    self.assertTrue(len(data) == len(labels), dataset.get_name())
 
-            for n in [2, 31, 500]:
-                # Default is no label
-                data = dataset(n)
-                self.assertTrue(data.shape == (n, 2), function.__name__)
+                    # should also work without labels
+                    data2 = dataset.sample(n, labels=False)
 
-        # Spatial MNIST
-        for function in [spatial_mnist]:
-            dataset = Dataset(function)
-
-            for n in [2, 31, 500]:
-                data = dataset(n)
-                self.assertTrue(data.shape == (n, 100), function.__name__)
-
-            # check that it also works when applying modifiers
-            dataset.skew()
-
-            for n in [2, 31, 500]:
-                data = dataset(n)
-                self.assertTrue(data.shape == (n, 100), function.__name__)
-
-    def test_dataset_labels(self):
-        # all datasets
-        for function in [ngon, corners, circles, checkerboard, spiral, moons, split_line, spatial_mnist]:
-            dataset = Dataset(function, labels=True)
-
-            for n in [2, 31, 500]:
-                data, labels = dataset(n)
-
-                self.assertTrue(labels.dtype == torch.int, function.__name__)
-                self.assertTrue(len(data) == len(labels), function.__name__)
-
-            # check that it also works when applying modifiers
-            dataset.skew()
-
-            for n in [2, 31, 500]:
-                data, labels = dataset(n)
-
-                self.assertTrue(labels.dtype == torch.int, function.__name__)
-                self.assertTrue(len(data) == len(labels), function.__name__)
+                    self.assertTrue(data.shape == data2.shape, dataset.get_name())
 
 
 class SurvaeTest(unittest.TestCase):
@@ -205,13 +154,13 @@ class SurvaeTest(unittest.TestCase):
         self.assertEqual(b.in_size(), 2)
         self.assertEqual(b.out_size(), 4)
 
-
     def test_survae_conditional(self):
         b = SurVAE(
             [
-                BijectiveLayer(23, [5, 5], 5),
+                BijectiveLayer(23, [5, 5]),
                 OrthonormalLayer(23),
             ] * 3,
+            condition_size=5,
         )
 
         for _ in range(100):

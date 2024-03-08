@@ -42,8 +42,6 @@ class Layer(nn.Module, ABC):
     data space X to the latent space Z, whereas the 'backward' method goes from Z to X.
     """
 
-    # TODO: later abc __init__
-
     @abstractmethod
     def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
         """
@@ -64,6 +62,9 @@ class Layer(nn.Module, ABC):
 
     @abstractmethod
     def out_size(self) -> int | None:
+        pass
+
+    def make_conditional(self, size: int):
         pass
 
 
@@ -100,7 +101,7 @@ class OrthonormalLayer(Layer):
 
 
 class BijectiveLayer(Layer):
-    def __init__(self, shape: tuple[int] | int, hidden_sizes: list[int], condition_size: int | None = None) -> None:
+    def __init__(self, shape: tuple[int] | int, hidden_sizes: list[int]) -> None:
         '''
         Standard bijective block from normalizing flow architecture.
 
@@ -108,6 +109,7 @@ class BijectiveLayer(Layer):
         * shape: Shape of input entries, which is the same for the output.
         * hidden_sizes: Sizes of hidden layers of the nested FFNN.
         * condition_size: Size of conditional input. If None, the layer is unconditional.
+        , condition_size: int | None = None
         '''
         super().__init__()
 
@@ -118,7 +120,6 @@ class BijectiveLayer(Layer):
         self.shape = shape
 
         self.size = torch.prod(torch.tensor(shape)).item()
-        self.condition_size = condition_size
 
         assert self.size > 1, "Bijective layer size must be at least 2!"
 
@@ -126,11 +127,9 @@ class BijectiveLayer(Layer):
         self.skip_size = self.size // 2
         self.non_skip_size = self.size - self.skip_size
 
-        # The nested FFNN takes the skip connection as input and returns
-        # the translation t (of same size as the non-skip connection) and
-        # scaling factor s (which is a scalar) for the linear transformation
-        input_size = self.skip_size if condition_size is None else self.skip_size + condition_size
-        self.ffnn = FFNN(input_size, hidden_sizes, self.non_skip_size + 1)
+        self.hidden_sizes = hidden_sizes
+
+        self.ffnn = FFNN(self.skip_size, self.hidden_sizes, self.non_skip_size + 1)
 
     def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
         # flatten input
@@ -200,6 +199,9 @@ class BijectiveLayer(Layer):
         X = X.reshape(-1, *self.shape)
 
         return X
+
+    def make_conditional(self, size: int):
+        self.ffnn = FFNN(self.skip_size + size, self.hidden_sizes, self.non_skip_size + 1)
 
     def in_size(self) -> int | None:
         return self.size
@@ -419,6 +421,7 @@ class Augment(Layer):
 
 class SliceLayer(Layer):
     '''Opposite of Augment, i.e. goes from highdim to lowdim'''
+
     def __init__(self, original_size, new_size):
         super().__init__()
 

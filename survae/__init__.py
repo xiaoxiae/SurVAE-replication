@@ -21,19 +21,7 @@ class TrainingSnapshot:
 
 
 class SurVAE(Layer):
-    @staticmethod
-    def _flatten_list(nested_list: list[Layer | list]) -> list[Layer]:
-        """Flatten a nested list of layers."""
-        flattened_list = []
-        for item in nested_list:
-            if isinstance(item, Layer):
-                flattened_list.append(item)
-            else:
-                flattened_list.extend(SurVAE._flatten_list(item))
-
-        return flattened_list
-
-    def __init__(self, layers: list[Layer | list], name: str | None = None):
+    def __init__(self, layers: list[Layer | list], name: str | None = None, condition_size: int = 0) -> None:
         """
         General framework for the SurVAE-Flow architecture.
         """
@@ -60,6 +48,27 @@ class SurVAE(Layer):
             raise ValueError(f"SurVAE doesn't have any fixed-in-size layers!")
 
         self.layers = nn.ModuleList(layers)
+
+        self.condition_size = condition_size
+
+        if condition_size != 0:
+            self.make_conditional(condition_size)
+
+    def make_conditional(self, size: int):
+        for layer in self.layers:
+            layer.make_conditional(size)
+
+    @staticmethod
+    def _flatten_list(nested_list: list[Layer | list]) -> list[Layer]:
+        """Flatten a nested list of layers."""
+        flattened_list = []
+        for item in nested_list:
+            if isinstance(item, Layer):
+                flattened_list.append(item)
+            else:
+                flattened_list.extend(SurVAE._flatten_list(item))
+
+        return flattened_list
 
     def get_name(self) -> str | None:
         """Get the name of the network."""
@@ -102,27 +111,41 @@ class SurVAE(Layer):
         """Train the SurVAE model on the given dataset."""
         optimizer = torch.optim.Adam(params=self.parameters(), lr=lr)
 
-        def run(data):
-            z, ll = self.forward(data, return_log_likelihood=True)
+        def run(data, labels):
+            one_hot_labels = Dataset.label_to_one_hot(labels, self.condition_size)
+
+            z, ll = self.forward(data, return_log_likelihood=True, condition=one_hot_labels)
             loss = (0.5 * torch.sum(z ** 2) - ll) / len(data)
 
             return loss
 
-        x_test = dataset(test_size)
+        labels = self.condition_size != 0
+
+        if labels:
+            x_test, y_test = dataset.sample(test_size, labels=True)
+        else:
+            x_test = dataset.sample(test_size, labels=False)
+            y_test = None
+
         trained_models = {}
 
         for epoch in range(epochs):
             optimizer.zero_grad()
-            x_train = dataset(batch_size)
 
-            loss = run(x_train)
+            if labels:
+                x_train, y_train = dataset.sample(batch_size, labels=True)
+            else:
+                x_train = dataset.sample(batch_size, labels=False)
+                y_train = None
+
+            loss = run(x_train, y_train)
             loss.backward()
 
             optimizer.step()
 
             # log possibly for period and always for the last iteration
             if (log_period != 0 and epoch % log_period == 0) or epoch == epochs - 1:
-                loss_test = run(x_test)
+                loss_test = run(x_test, y_test)
 
                 trained_models[epoch + 1] = TrainingSnapshot(
                     copy.deepcopy(self.state_dict()), loss.item(), loss_test.item())
