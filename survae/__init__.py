@@ -21,9 +21,15 @@ class TrainingSnapshot:
 
 
 class SurVAE(Layer):
-    def __init__(self, layers: list[Layer | list], name: str | None = None, condition_size: int = 0) -> None:
+    def __init__(self, layers: list[Layer | list], name: str | None = None, condition_size: int = 0, summary=lambda x: x) -> None:
         """
         General framework for the SurVAE-Flow architecture.
+
+        ### Inputs:
+        * layers: (Possibly nested) list of layers.
+        * name: Human-recognizable name of the network.
+        * condition_size: Size of the conditional input. 0 by default, i.e. unconditional.
+        * summary: If the network is conditional, the condition gets passed through this function. Identity by default. 'condition_size' must be the output size of 'summary'.
         """
         super().__init__()
 
@@ -48,6 +54,7 @@ class SurVAE(Layer):
             raise ValueError(f"SurVAE doesn't have any fixed-in-size layers!")
 
         self.layers = nn.ModuleList(layers)
+        self.summary = summary
 
         self.condition_size = condition_size
 
@@ -79,6 +86,9 @@ class SurVAE(Layer):
         self.name = name
 
     def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
+        if condition is not None:
+            condition = self.summary(condition)
+
         ll_total = 0
         for layer in self.layers:
             if return_log_likelihood:
@@ -93,6 +103,9 @@ class SurVAE(Layer):
             return X
 
     def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
+        if condition is not None:
+            condition = self.summary(condition)
+
         for layer in reversed(self.layers):
             Z = layer.backward(Z, condition)
 
