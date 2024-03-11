@@ -99,7 +99,7 @@ class LayerTest(unittest.TestCase):
 class DatasetTest(unittest.TestCase):
     def test_dataset(self):
         # all datasets
-        for dataset in [Ngon(), Corners(), Circles(), Checkerboard(), Spiral(), Moons(), SplitLine(), SpatialMNIST()]:
+        for dataset in ALL_DATASETS:
             for f in [lambda d: d, lambda d: d.skew()]:
                 f(dataset)
 
@@ -113,6 +113,9 @@ class DatasetTest(unittest.TestCase):
                     data2 = dataset.sample(n, labels=False)
 
                     self.assertTrue(data.shape == data2.shape, dataset.get_name())
+
+                    # if the labels are not sequential then we are sad
+                    self.assertTrue(torch.max(labels) < dataset.get_categories())
 
 
 class SurvaeTest(unittest.TestCase):
