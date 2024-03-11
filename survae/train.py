@@ -33,3 +33,10 @@ def train_models_conditional(model_generators: list[Callable[[], SurVAE] | Calla
                 pbar.update(1)
 
     return models
+
+
+def train_models(*args, **kwargs):
+    # TODO: tom did this to not fuck up possible merge but the previous method should juts be train_models
+    return train_models_conditional(*args, **kwargs)
+
+
