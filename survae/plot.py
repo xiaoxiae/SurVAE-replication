@@ -149,7 +149,7 @@ def plot(models: TrainedModels, datasets: list[Dataset]):
     Just plot it.
     """
     # assume that if one is conditional, they all are
-    conditional = list(models.values())[0][0].condition_size is None
+    conditional = list(models.values())[0][0].condition_size != 0
 
     if conditional:
         plot_conditional_models(models, datasets)
