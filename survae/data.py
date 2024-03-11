@@ -15,14 +15,15 @@ class Dataset(ABC):
     Batteries included!
     """
 
-    def __init__(self, shuffle=True):
+    def __init__(self, shuffle=True, name=None):
         self.modifiers = []
         self.shuffle = shuffle
 
-    @classmethod
-    def get_name(cls) -> str:
+        self._name = name
+
+    def get_name(self) -> str:
         """Get the dataset name."""
-        return cls.__name__
+        return self._name or self.__class__.__name__
 
     @abstractmethod
     def get_categories(self) -> int:
@@ -264,16 +265,19 @@ class Checkerboard(Dataset):
 
         # move from local to global coordinates randomly
         for i in range(n):
-            row_offset = np.random.randint(0, self.k)
-            column_offset = ((np.random.randint(0, self.k)) * 2 + (row_offset % 2)) % self.k
+            row = np.random.randint(0, self._k)
+            column = np.random.randint(0, self._k)
 
-            categories.append(row_offset * self.k + column_offset)
+            row_offset = row
+            column_offset = (column * 2 + (row_offset % 2)) % self._k
+
+            categories.append(row * self._k + column)
 
             points[i][0] += row_offset
             points[i][1] += column_offset
 
         # center to origin
-        points -= self.k / 2
+        points -= self._k / 2
 
         X = torch.tensor(points)
 
@@ -385,10 +389,10 @@ class Spiral(Dataset):
         y2 = r * torch.sin(t - np.pi)
 
         # Add Gaussian noise if specified
-        x1 += torch.randn_like(t) * self.noise
-        y1 += torch.randn_like(t) * self.noise
-        x2 += torch.randn_like(t) * self.noise
-        y2 += torch.randn_like(t) * self.noise
+        x1 += torch.randn_like(t) * self._noise
+        y1 += torch.randn_like(t) * self._noise
+        x2 += torch.randn_like(t) * self._noise
+        y2 += torch.randn_like(t) * self._noise
 
         data1 = torch.stack((x1, y1), dim=1)
         data2 = torch.stack((x2, y2), dim=1)
@@ -403,6 +407,10 @@ class Spiral(Dataset):
 class Moons(Dataset):
     """
     Two moons dataset.
+
+     ___
+    /   \
+      \___/
     """
 
     def __init__(self, noise: float = 0.1, **kwargs):
@@ -415,13 +423,19 @@ class Moons(Dataset):
         return 2
 
     def __call__(self, n: int):
-        X, y = make_moons(n_samples=n, noise=noise, random_state=42)
+        X, y = make_moons(n_samples=n, noise=self._noise, random_state=42)
         return torch.tensor(X), torch.tensor(y).int()
 
 
 class SplitLine(Dataset):
     """
-    Two moons dataset.
+    A split line dataset.
+
+      /
+     o
+
+     o
+    /
     """
 
     def __init__(self, noise: float = 0.005, offset: float = 1, **kwargs):
@@ -437,7 +451,7 @@ class SplitLine(Dataset):
 
     def __call__(self, n: int):
         mu = np.array([0, 0])
-        sigma = np.array([[1, 1], [noise, -noise]])
+        sigma = np.array([[1, 1], [self._noise, -self._noise]])
 
         data = np.random.multivariate_normal(mu, sigma, n)
 
@@ -454,3 +468,44 @@ class SplitLine(Dataset):
         X[:, 1] = y_values
 
         return X, y.int()
+
+
+class Gradient(Dataset):
+    """
+    Gradient.
+
+    ###
+    mmm
+    ...
+    """
+
+    def __init__(self, cool: bool = False, **kwargs):
+        """
+        :param cool: Whether the gradient is cool or not.
+        """
+        super().__init__(**kwargs)
+
+        self._cool = cool
+
+    def get_categories(self) -> int:
+        return 2
+
+    def __call__(self, n: int):
+        exponents = [1, 1 / 2]
+        if self._cool:
+            exponents = [1 / 2.4, 1 / 1.4]
+
+        x_axis = torch.rand(n) ** exponents[0]
+        y_axis = torch.rand(n) ** exponents[1]
+
+        X = torch.stack((x_axis, y_axis), dim=1)
+
+        y = torch.zeros(n)
+        y[X[:, 1] >= .5] = 1
+
+        return X, y.int()
+
+
+TWO_D_DATASETS = [Ngon(), Corners(), Circles(), Checkerboard(), Spiral(), Moons(), SplitLine(), Gradient()]
+MULTI_D_DATASETS = [SpatialMNIST()]
+ALL_DATASETS = TWO_D_DATASETS + MULTI_D_DATASETS
