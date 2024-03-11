@@ -111,7 +111,14 @@ class SurVAE(Layer):
 
         return Z
 
-    def sample(self, n: int, condition: torch.Tensor | None = None) -> torch.Tensor:
+    def sample(self, n: int, condition: torch.Tensor | int | None = None) -> torch.Tensor:
+        # TODO: Tom did this and will do it again
+        if condition is not None and not isinstance(condition, torch.Tensor):
+            condition = torch.nn.functional.one_hot(
+                torch.tensor([condition] * n, dtype=torch.long),
+                num_classes=self.condition_size
+            )
+
         with torch.no_grad():
             # sample from the code distribution, which should be the standard normal
             Z_sample = torch.normal(0, 1, size=(n, self.out_size()), device=DEVICE)
@@ -125,9 +132,10 @@ class SurVAE(Layer):
         optimizer = torch.optim.Adam(params=self.parameters(), lr=lr)
 
         def run(data, labels):
-            one_hot_labels = Dataset.label_to_one_hot(labels, self.condition_size)
+            if labels is not None:
+                labels = Dataset.label_to_one_hot(labels.type(torch.long), self.condition_size)
 
-            z, ll = self.forward(data, return_log_likelihood=True, condition=one_hot_labels)
+            z, ll = self.forward(data, return_log_likelihood=True, condition=labels)
             loss = (0.5 * torch.sum(z ** 2) - ll) / len(data)
 
             return loss
