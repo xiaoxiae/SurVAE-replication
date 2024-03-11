@@ -18,7 +18,7 @@ def plot_models(models: TrainedModels, datasets: list[Dataset], sample_count=SAM
 
     # Plot the raw data
     for i, dataset in enumerate(datasets):
-        X = dataset(sample_count).cpu().numpy()
+        X = dataset.sample(sample_count).cpu().numpy()
 
         axs[i, 0].hist2d(X[:, 0], X[:, 1], bins=bins)
         axs[i, 0].set_title(f'Data / {dataset.get_name()}')
@@ -38,7 +38,7 @@ def plot_models(models: TrainedModels, datasets: list[Dataset], sample_count=SAM
     plt.show()
 
 
-def plot_conditional_models(models: TrainedModels, datasets: list[Dataset], sample_count=50_000):
+def plot_conditional_models(models: TrainedModels, datasets: list[Dataset], sample_count=SAMPLE_COUNT):
     """Plot the results for trained conditionally-trained models on the given datasets."""
     model_count = max([j for _, j in models]) + 1
 
@@ -47,7 +47,7 @@ def plot_conditional_models(models: TrainedModels, datasets: list[Dataset], samp
 
     # Plot the raw data
     for i, dataset in enumerate(datasets):
-        X, y = dataset(sample_count)
+        X, y = dataset.sample(sample_count, labels=True)
         X.cpu().numpy()
         y.cpu().numpy()
 
@@ -55,24 +55,25 @@ def plot_conditional_models(models: TrainedModels, datasets: list[Dataset], samp
 
         for label in unique_labels:
             label_indices = np.where(y == label)[0]
-            axs[i, 0].scatter(X[label_indices, 0], X[label_indices, 1], label=f'Label {label}',
-                              alpha=100 / sample_count)
+            axs[i, 0].scatter(
+                X[label_indices, 0], X[label_indices, 1],
+                label=f'Label {label}', alpha=100 / sample_count
+            )
 
         axs[i, 0].set_title(f'Ground Truth / {dataset.get_name()}')
 
-    # # Iterate over datasets and create heatmaps
-    # for i, dataset in enumerate(datasets):
-    #     for j in range(model_count):
-    #         model = models[i, j][0]  # [0] is the model, [1] is parameters/losses for log epochs
-    #
-    #         for label in unique_labels:
-    #             sampled_points = model.sample(sample_count, label=label).cpu().numpy()
-    #             axs[i, j + 1].scatter(sampled_points[:, 0], sampled_points[:, 1], label=f'Label {label}')
-    #
-    #         X = model.sample(sample_count).cpu().numpy()
+    for i, dataset in enumerate(datasets):
+        for j in range(model_count):
+            model = models[i, j][0]  # [0] is the model, [1] is parameters/losses for log epochs
 
-    #         axs[i, j + 1].hist2d(X[:, 0], X[:, 1], bins=BINS)
-    #         axs[i, j + 1].set_title(f'{model.get_name()} / {dataset.get_name()}')
+            for label in range(model.condition_size):
+                sampled_points = model.sample(sample_count // model.condition_size, condition=label).cpu().numpy()
+                axs[i, j + 1].scatter(
+                    sampled_points[:, 0], sampled_points[:, 1],
+                    label=f'Label {label}', alpha=100 / sample_count
+                )
+
+            axs[i, j + 1].set_title(f'{model.get_name()} / {dataset.get_name()}')
 
     # Adjust layout
     plt.tight_layout()
@@ -141,3 +142,18 @@ def plot_q_values(models: TrainedModels, datasets: list[Dataset]):
     # Adjust layout
     plt.tight_layout()
     plt.show()
+
+
+def plot(models: TrainedModels, datasets: list[Dataset]):
+    """
+    Just plot it.
+    """
+    # assume that if one is conditional, they all are
+    conditional = list(models.values())[0][0].condition_size is None
+
+    if conditional:
+        plot_conditional_models(models, datasets)
+    else:
+        plot_models(models, datasets)
+
+    plot_losses(models, datasets)
