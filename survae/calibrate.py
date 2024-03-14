@@ -149,3 +149,48 @@ def plot_learned_distribution(
     plt.suptitle(title)
     plt.tight_layout()
     plt.show()
+
+
+def resimulate(model: SurVAE, sim, Y: torch.Tensor, n_samples: int = 50):
+    '''
+    Perform a resimulation of parameters predicted by the model.
+
+    ### Inputs:
+    * model: Trained SBI SurVAE model.
+    * sim: Simulation function.
+    * Y: Tensor of shape (C, D), where C is the number of conditions and D is the number of parameters.
+    * n_samples: Number of samples per condition.
+    '''
+    n_conditions = len(Y)
+    X = sim(Y)
+
+    X = X.repeat_interleave(n_samples, dim=0)
+    Y_hat = model.sample(n_samples * n_conditions, X)
+
+    X_resim: torch.Tensor = sim(Y_hat)
+    X_resim = X_resim.reshape(n_conditions, n_samples, -1)
+
+    return X_resim
+
+
+def plot_resimulation(GT: torch.Tensor, X_resim: torch.Tensor, **kwargs):
+    '''
+    Plot data produced by "resimulate". The two functions are separate to allow for data cleanup of the resimulation output.
+    The kwargs are passed to "plt.figure".
+
+    ### Inputs:
+    * GT: Ground-truth simulation which was resimulated. Has shape (D,).
+    * X_resim: Resimulation data. Has shape (N_SAMPLES, D).
+    '''
+    means = X_resim.mean(dim=0).cpu().numpy()
+    quantiles = X_resim.quantile(torch.tensor([0.05, 0.95]), dim=0).cpu().numpy()
+    _x = np.arange(len(GT))
+
+    plt.figure(**kwargs)
+    plt.fill_between(_x, quantiles[0, :], quantiles[1, :], alpha=0.2, label='90%')
+    plt.plot(_x, means, linestyle='--', alpha=0.8, label='Mean')
+    plt.plot(_x, GT.cpu().numpy(), label='Ground truth')
+
+    plt.legend(bbox_to_anchor=(1, 1))
+    plt.grid()
+    plt.show()
