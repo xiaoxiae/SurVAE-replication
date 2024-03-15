@@ -319,10 +319,20 @@ class MaxPoolingLayer(Layer):
     '''
     MaxPoolingLayer: Layer that performs max pooling on the input data.
 
-    size: unintuitively, the size parameter will be the size of the square in one direction
+    size: input size, i.e. flattened picture
+    width: input width, i.e. the width of the picture, sqrt of size
+
+    out_width: width of the output picture, sqrt of out_size
+    out_size: size of flattened output picture
+
     stride: the stride of the max pooling operation 
+
+    Distribution choices: 
+        - standard half-normal distribution (default)
+        - exponential distribution 
+
     '''
-    def __init__(self, size: int, stride: int, lam = 0.1):
+    def __init__(self, size: int, stride: int, exponential_distribution: bool = False, learn_distribution_parameter: bool = False):
         super().__init__()
 
         self.width = np.sqrt(size).astype(int) 
@@ -332,7 +342,20 @@ class MaxPoolingLayer(Layer):
 
         self.out_width = int(self.width / self.stride)
 
-        self.lam = lam
+        
+        if exponential_distribution:
+            self.distribution = "exponential"
+            lam = torch.tensor([0.1])
+            if learn_distribution_parameter:
+                lam = nn.Parameter(lam)
+            self.lam = lam
+        else:
+            self.distribution = "half-normal"
+            sigma = 1
+            if learn_distribution_parameter:
+                sigma = nn.Parameter(self.sigma)
+            self.sigma = sigma
+
 
         self.index_probs = torch.tensor([1 / self.stride for _ in range(self.stride)])
 
@@ -351,19 +374,12 @@ class MaxPoolingLayer(Layer):
         return Z.view(-1)
 
     def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
-        exp_distr = torch.distributions.exponential.Exponential(self.lam)
         Z = Z.view((self.out_width, self.out_width))
-
-        # expand matrix containing local maxima 
+        
+        # expand matrix containing local maxima (by repeating local max)
         X_hat = Z.repeat_interleave(self.stride,dim=0).repeat_interleave(self.stride,dim=1)
 
-        # sample values in (- infty, 0]) with exponential distribution
-        exp_distr = torch.distributions.exponential.Exponential(self.lam)
-        samples = -exp_distr.sample(X_hat.shape)
-
-
         # mask for the indices of the local maxima
-
         k = torch.distributions.categorical.Categorical(self.index_probs) 
         i_indices = k.sample((self.out_size(),))
         j_indices = k.sample((self.out_size(),))
@@ -373,6 +389,14 @@ class MaxPoolingLayer(Layer):
         for I in range(self.out_width):
             for J in range(self.out_width):
                 index_mask[I*self.stride + i_indices[I*self.out_width+J], J*self.stride + j_indices[I*self.out_width+J]] = 0
+
+
+        # sample values in (- infty, 0]) with respective distribution
+        if self.distribution == "half-normal":
+            distr = torch.distributions.half_normal.HalfNormal(self.sigma)
+        else:
+            distr = torch.distributions.exponential.Exponential(self.lam)
+        samples = -distr.sample(X_hat.shape)
 
         X_hat = X_hat + samples * index_mask
         
