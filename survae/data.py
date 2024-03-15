@@ -284,6 +284,32 @@ class Checkerboard(Dataset):
         return X, torch.tensor(categories).int()
 
 
+class MNIST_784(Dataset):
+    """
+    Load the 28x28 MNIST dataset.
+    """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        
+        # immediately load the dataset for later use
+        mnist = fetch_openml('mnist_784', parser='auto', cache=True)
+
+        self.mnist_images = torch.tensor(np.array(mnist.data)) / 256
+        self.mnist_labels = torch.tensor(mnist.target.astype(int))
+
+        self.size = len(self.mnist_labels)
+    
+    def get_categories(self) -> int:
+        return 10
+    
+    def __call__(self, n: int):
+        # if n > self.size, elements may be sampled multiple times
+        perm = torch.randperm(self.size) % self.size
+        X = self.mnist_images[perm]
+        y = self.mnist_labels[perm]
+        return X, y
+
+
 class SpatialMNIST(Dataset):
     """
     Generate a spatial MNIST dataset by taking normalized MNIST images as density and sampling k points.
@@ -306,7 +332,7 @@ class SpatialMNIST(Dataset):
         @cache
         def _get_mnist(name='mnist_784', version=1):
             # Fetch the MNIST dataset
-            mnist = fetch_openml(name, version=version, cache=True)
+            mnist = fetch_openml(name, version=version, parser='auto', cache=True)
 
             # Convert to numpy array
             mnist_images = np.array(mnist.data)
@@ -409,8 +435,8 @@ class Moons(Dataset):
     Two moons dataset.
 
      ___
-    /   \
-      \___/
+    |   |
+      |___|
     """
 
     def __init__(self, noise: float = 0.1, **kwargs):

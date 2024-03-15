@@ -1,5 +1,6 @@
 import copy
 from dataclasses import dataclass
+from collections.abc import Iterable
 
 import torch
 import torch.nn as nn
@@ -70,7 +71,8 @@ class SurVAE(Layer):
         """Flatten a nested list of layers."""
         flattened_list = []
         for item in nested_list:
-            if isinstance(item, Layer):
+            # if isinstance(item, Layer):
+            if not isinstance(item, Iterable):
                 flattened_list.append(item)
             else:
                 flattened_list.extend(SurVAE._flatten_list(item))

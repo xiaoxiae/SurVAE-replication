@@ -109,8 +109,6 @@ class BijectiveLayer(Layer):
         ### Inputs:
         * shape: Shape of input entries, which is the same for the output.
         * hidden_sizes: Sizes of hidden layers of the nested FFNN.
-        * condition_size: Size of conditional input. If None, the layer is unconditional.
-        , condition_size: int | None = None
         '''
         super().__init__()
 
@@ -353,43 +351,41 @@ class MaxPoolingLayer(Layer):
             self.distribution = "half-normal"
             sigma = 1
             if learn_distribution_parameter:
-                sigma = nn.Parameter(self.sigma)
+                sigma = nn.Parameter(sigma)
             self.sigma = sigma
 
 
-        self.index_probs = torch.tensor([1 / self.stride for _ in range(self.stride)])
+        self.index_probs = torch.tensor([1 / self.stride**2 for _ in range(self.stride**2)])
 
 
     def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
 
-        X = X.view(self.width, self.width) # reshape to 2D
+        X = X.view(-1, self.width, self.width) # reshape to 2D
         
         l = []
         for i in range(self.stride):
             for j in range(self.stride):
-                l.append(X[i::self.stride,j::self.stride])
+                l.append(X[:, i::self.stride,j::self.stride])
 
         combined_tensor = torch.stack(l, dim=0)
         Z, _ = torch.max(combined_tensor, dim=0)
-        return Z.view(-1)
+        # return Z.view(-1)
+        return Z.flatten(start_dim=1)
 
     def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
-        Z = Z.view((self.out_width, self.out_width))
+        Z = Z.view(-1, self.out_width, self.out_width)
         
         # expand matrix containing local maxima (by repeating local max)
-        X_hat = Z.repeat_interleave(self.stride,dim=0).repeat_interleave(self.stride,dim=1)
+        X_hat = Z.repeat_interleave(self.stride,dim=2).repeat_interleave(self.stride,dim=1)
 
         # mask for the indices of the local maxima
         k = torch.distributions.categorical.Categorical(self.index_probs) 
-        i_indices = k.sample((self.out_size(),))
-        j_indices = k.sample((self.out_size(),))
+        indices = k.sample(Z.shape)
 
-        index_mask = torch.ones_like(X_hat)
+        indices_repeated = indices.repeat_interleave(self.stride, dim=2).repeat_interleave(self.stride, dim=1)
+        index_places = torch.arange(self.stride**2).reshape(self.stride, self.stride).repeat(self.out_size(), self.out_size())
 
-        for I in range(self.out_width):
-            for J in range(self.out_width):
-                index_mask[I*self.stride + i_indices[I*self.out_width+J], J*self.stride + j_indices[I*self.out_width+J]] = 0
-
+        index_mask = (index_places == indices_repeated)
 
         # sample values in (- infty, 0]) with respective distribution
         if self.distribution == "half-normal":
@@ -398,9 +394,9 @@ class MaxPoolingLayer(Layer):
             distr = torch.distributions.exponential.Exponential(self.lam)
         samples = -distr.sample(X_hat.shape)
 
-        X_hat = X_hat + samples * index_mask
+        X_hat = X_hat + samples * ~index_mask
         
-        return X_hat.view(-1)
+        return X_hat.flatten(start_dim=1)
 
     def in_size(self) -> int | None:
         return self.size
