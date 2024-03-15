@@ -378,66 +378,7 @@ class MaxPoolingLayer(Layer):
         
         return X_hat.view(-1)
 
-    def in_size(self) -> int | None:class MaxPoolingLayer(Layer):
-    def __init__(self, size: int, stride: int, lam = 0.1):
-        super().__init__()
-
-        self.size = np.sqrt(size).astype(int) 
-
-        assert self.size % stride == 0, "Stride must be a divisor of size!"
-        self.stride = stride
-
-        self.lam = lam
-
-        self.index_probs = torch.tensor([1 / self.stride for _ in range(self.stride)])
-
-
-    def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
-
-        X = X.view(self.size, self.size) # reshape to 2D
-        
-        l = []
-        for i in range(self.stride):
-            for j in range(self.stride):
-                l.append(X[i::self.stride,j::self.stride])
-
-        combined_tensor = torch.stack(l, dim=0)
-        Z, _ = torch.max(combined_tensor, dim=0)
-        return Z.view(-1)
-
-    def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
-        exp_distr = torch.distributions.exponential.Exponential(self.lam)
-        Z = Z.view((self.out_size(), self.out_size()))
-
-        # expand matrix containing local maxima 
-        X_hat = Z.repeat_interleave(self.stride,dim=0).repeat_interleave(self.stride,dim=1)
-
-        # sample values in (- infty, 0]) with exponential distribution
-        exp_distr = torch.distributions.exponential.Exponential(self.lam)
-        samples = -exp_distr.sample(X_hat.shape)
-
-
-        # mask for the indices of the local maxima
-
-        k = torch.distributions.categorical.Categorical(self.index_probs) 
-        i_indices = k.sample((self.out_size()**2,))
-        j_indices = k.sample((self.out_size()**2,))
-
-        index_mask = torch.ones_like(X_hat)
-
-        for I in range(self.out_size()):
-            for J in range(self.out_size()):
-                index_mask[I*self.stride + i_indices[I*self.out_size()+J], J*self.stride + j_indices[I*self.out_size()+J]] = 0
-
-        X_hat = X_hat + samples * index_mask
-        
-        return X_hat.view(-1)
-
     def in_size(self) -> int | None:
-        return self.size
-
-    def out_size(self) -> int | None:
-        return int(self.size / self.stride)
         return self.size
 
     def out_size(self) -> int | None:
