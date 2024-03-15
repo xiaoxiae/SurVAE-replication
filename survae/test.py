@@ -14,7 +14,8 @@ class LayerTest(unittest.TestCase):
             self.assertTrue(torch.allclose(a, b.forward(b.backward(a)), atol=1e-5))
 
     def test_bijective_conditional(self):
-        b = BijectiveLayer(23, [25, 50], 5)
+        b = BijectiveLayer(23, [25, 50])
+        b.make_conditional(5)
         for _ in range(100):
             a = torch.randn(300, 23) * 3
             cond = torch.randn(300, 5) * 6
@@ -94,6 +95,20 @@ class LayerTest(unittest.TestCase):
             self.assertTrue(
                 torch.allclose(torch.sort(_X_hat, dim=-1).values, torch.sort(_Z, dim=-1).values))  # set equality
             self.assertTrue(torch.allclose(torch.sort(_X, dim=-1).values, torch.sort(_X_hat, dim=-1).values))
+    
+    def test_maxpooling(self):
+        L = MaxPoolingLayer(18*18, 3)
+        for _ in range(100):
+            Z = torch.randn(6*6) * 3
+
+            X = L.backward(Z)
+            Z_hat = L.forward(X)
+            self.assertTrue(torch.allclose(Z, Z_hat, atol=1e-5))
+
+            # test that replacing all elements with their appropriate maximum gives the same output
+            X_tilde = Z.view(6, 6).repeat_interleave(3, dim=0).repeat_interleave(3, dim=1).flatten()
+            Z_tilde = L.forward(X_tilde)
+            self.assertTrue(torch.allclose(Z, Z_tilde, atol=1e-5))
 
 
 class DatasetTest(unittest.TestCase):
