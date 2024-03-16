@@ -99,16 +99,26 @@ class LayerTest(unittest.TestCase):
     def test_maxpooling(self):
         L = MaxPoolingLayer(18*18, 3)
         for _ in range(100):
-            Z = torch.randn(6*6) * 3
+            Z = torch.randn(300, 6*6) * 3
 
             X = L.backward(Z)
             Z_hat = L.forward(X)
             self.assertTrue(torch.allclose(Z, Z_hat, atol=1e-5))
 
             # test that replacing all elements with their appropriate maximum gives the same output
-            X_tilde = Z.view(6, 6).repeat_interleave(3, dim=0).repeat_interleave(3, dim=1).flatten()
+            X_tilde = Z.view(-1, 6, 6).repeat_interleave(3, dim=2).repeat_interleave(3, dim=1).flatten()
             Z_tilde = L.forward(X_tilde)
             self.assertTrue(torch.allclose(Z, Z_tilde, atol=1e-5))
+    
+    def test_maxpoolingwithhop(self):
+        L = [MaxPoolingLayerWithHop(13*13, 3, 2, exponential_distribution=False), MaxPoolingLayerWithHop(11*11, 3, 2, exponential_distribution=True)]
+        for l in L:
+            for _ in range(100):
+                Z = torch.randn(300, l.out_size()) * 3
+
+                X = l.backward(Z)
+                Z_hat = l.forward(X)
+                self.assertTrue(torch.allclose(Z, Z_hat, atol=1e-5))
 
 
 class DatasetTest(unittest.TestCase):

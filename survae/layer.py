@@ -343,7 +343,7 @@ class MaxPoolingLayer(Layer):
         
         if exponential_distribution:
             self.distribution = "exponential"
-            lam = torch.tensor([0.1])
+            lam = torch.tensor(0.1)
             if learn_distribution_parameter:
                 lam = nn.Parameter(lam)
             self.lam = lam
@@ -383,7 +383,7 @@ class MaxPoolingLayer(Layer):
         indices = k.sample(Z.shape)
 
         indices_repeated = indices.repeat_interleave(self.stride, dim=2).repeat_interleave(self.stride, dim=1)
-        index_places = torch.arange(self.stride**2).reshape(self.stride, self.stride).repeat(self.out_size(), self.out_size())
+        index_places = torch.arange(self.stride**2).reshape(self.stride, self.stride).repeat(self.out_width, self.out_width)
 
         index_mask = (index_places == indices_repeated)
 
@@ -404,6 +404,109 @@ class MaxPoolingLayer(Layer):
     def out_size(self) -> int | None:
         return int(self.out_width ** 2)
 
+
+class MaxPoolingLayerWithHop(Layer):
+    '''
+    MaxPoolingLayerWithHop: Layer that performs max pooling on the input data.
+
+    size: input size, i.e. flattened picture
+    width: input width, i.e. the width of the picture, sqrt of size
+    hop: defines the distance between the blocks of size stride for which the maxima is taken
+        we require that hop >= 1
+
+    out_width: width of the output picture, sqrt of out_size
+    out_size: size of flattened output picture
+
+    stride: the stride of the max pooling operation
+
+    Distribution choices: 
+        - standard half-normal distribution (default)
+        - exponential distribution 
+
+    '''
+    def __init__(self, size: int, stride: int, hop: int, exponential_distribution: bool = False, learn_distribution_parameter: bool = False):
+        super().__init__()
+
+        self.size = size
+
+        self.width = np.sqrt(size).astype(int) 
+
+        assert stride <= self.width, "Stride must be smaller than the width of the picture!"
+        assert 0 < hop and hop <= stride, "Hop must be smaller than the stride!"
+        assert (self.width - stride) % hop == 0, "Stride and hop must be chosen such that the picture is fully covered!"
+
+        self.stride = stride
+        self.hop = hop
+
+        self.out_width = (self.width - stride) // hop + 1 # = the number of blocks considered (possible overlap)
+        
+        if exponential_distribution:
+            self.distribution = "exponential"
+            lam = torch.tensor(0.1)
+            if learn_distribution_parameter:
+                lam = nn.Parameter(lam)
+            self.lam = lam
+        else:
+            self.distribution = "half-normal"
+            sigma = 1
+            if learn_distribution_parameter:
+                sigma = nn.Parameter(sigma)
+            self.sigma = sigma
+
+
+    def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
+
+        X = X.view(-1, self.width, self.width) # reshape to 2D
+        
+        l = []
+        for i in range(self.stride):
+            for j in range(self.stride):
+                l.append(X[:, i:i+self.width-self.stride + 1:self.hop,j:j+self.width-self.stride + 1:self.hop])
+
+        combined_tensor = torch.stack(l, dim=0)
+        Z, _ = torch.max(combined_tensor, dim=0)
+
+        return Z.flatten(start_dim=1)
+    
+    def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
+        Z = Z.view(-1, self.out_width, self.out_width)
+
+        _max = Z.max() + 1
+        max_max = torch.full((len(Z), self.out_width * self.out_width, self.width, self.width), _max)
+
+        batch_indices = torch.arange(len(Z))
+        for i in range(self.out_width):
+            for j in range(self.out_width):
+                max_max[batch_indices, j + i * (self.out_width), (self.hop * i):(self.hop * i + self.stride), (self.hop * j):(self.hop * j + self.stride)] = Z[batch_indices, i, j].unsqueeze(1).unsqueeze(2)
+
+        # This is the best possible name. I will not elaborate.
+        min_max = max_max.min(dim=1)[0]
+
+        block_mask = torch.isclose(min_max.unsqueeze(1), max_max)
+        _rand = torch.rand(block_mask.shape)
+        _rand[~block_mask] = -1
+        arg_max = _rand.flatten(start_dim=2).argmax(dim=2)
+
+        noise_mask = torch.ones((len(Z), self.size), dtype=torch.bool)
+        for idx in arg_max.T:
+            noise_mask[batch_indices, idx] = False
+
+        # sample values in (- infty, 0]) with respective distribution
+        if self.distribution == "half-normal":
+            distr = torch.distributions.half_normal.HalfNormal(self.sigma)
+        else:
+            distr = torch.distributions.exponential.Exponential(self.lam)
+        samples = -distr.sample(noise_mask.shape)
+
+        X_hat = min_max.flatten(start_dim=1) + (samples * noise_mask)
+
+        return X_hat
+
+    def in_size(self) -> int | None:
+        return self.size
+
+    def out_size(self) -> int | None:
+        return int(self.out_width ** 2)
 
 
 class DequantizationLayer(Layer):
