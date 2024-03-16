@@ -6,6 +6,9 @@ from functools import cache
 import numpy as np
 import torch
 from sklearn.datasets import fetch_openml, make_moons
+from torchvision import datasets
+
+import survae
 
 
 class Dataset(ABC):
@@ -292,10 +295,10 @@ class MNIST_784(Dataset):
         super().__init__(**kwargs)
         
         # immediately load the dataset for later use
-        mnist = fetch_openml('mnist_784', parser='auto', cache=True)
+        mnist = datasets.MNIST(root='./data', train=True, download=True)
 
-        self.mnist_images = torch.tensor(np.array(mnist.data)) / 256
-        self.mnist_labels = torch.tensor(mnist.target.astype(int))
+        self.mnist_images = (mnist.data).double().flatten(start_dim=1).to(survae.DEVICE)
+        self.mnist_labels = mnist.targets.to(survae.DEVICE)
 
         self.size = len(self.mnist_labels)
     
@@ -304,7 +307,7 @@ class MNIST_784(Dataset):
     
     def __call__(self, n: int):
         # if n > self.size, elements may be sampled multiple times
-        perm = torch.randperm(self.size) % self.size
+        perm = (torch.randperm(max(n, self.size)) % self.size)[:n]
         X = self.mnist_images[perm]
         y = self.mnist_labels[perm]
         return X, y

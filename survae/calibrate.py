@@ -2,7 +2,6 @@ from bisect import bisect_left
 
 import numpy as np
 import torch
-from scipy.stats import norm as scipy_norm
 from matplotlib import pyplot as plt
 
 from survae import SurVAE
@@ -57,6 +56,9 @@ def compute_calibration_values(model: SurVAE, X: torch.Tensor, Y: torch.Tensor |
 
 
 def plot_calibration_history(cs: torch.Tensor, n_bins: int, title: str):
+    '''
+    Plots the calibration HISTOGRAM (mb, I'm not gonna rename it and break things again)
+    '''
     bins = torch.zeros(n_bins).cpu()
 
     for c in cs:
@@ -102,6 +104,7 @@ def plot_learned_distribution(
         axis_scale: float = 3.6,
         bins: int = 40,
         alpha: float = 0.15,
+        sigma: float = 1.0,
 ):
     '''
     Check if a distribution looks gaussian in 1D and 2D.
@@ -114,14 +117,17 @@ def plot_learned_distribution(
     * plotsize: Size of each subplot.
     * axis_scale: "Zoom factor" of the plots.
     * bins: Number of bins in the 1D plots.
+    * alpha: Transparency of the scattered points.
+    * sigma: Standard deviation of the normal distribution to compare with.
     '''
     n = Y.shape[-1] # number of parameters
 
     fig, ax = plt.subplots(n, n, figsize=(plotsize * n, plotsize * n))
 
     x_axis = np.linspace(-axis_scale, axis_scale, 100)
-    y_gaussian = scipy_norm.pdf(x_axis)
-    circle_radius = np.sqrt(-2 * np.log(0.1))
+    gaussian_pdf = lambda x: 1 / (sigma * np.sqrt(2 * np.pi)) * np.exp(-0.5 * (x / sigma) ** 2)
+    y_gaussian = gaussian_pdf(x_axis)
+    circle_radius = sigma * np.sqrt(-2 * np.log(0.1))
 
     for i in range(n):
         for k in range(n):

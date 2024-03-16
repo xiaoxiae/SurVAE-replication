@@ -1,0 +1,38 @@
+sv_maxpool = SurVAE(
+    # [DequantizationLayer()] + # the dequantization layer makes the reconstruction error pretty pointless in practice
+    [
+        [BijectiveLayer(784, [200, 200]), OrthonormalLayer(784)] # 784 = 28^2
+        for _ in range(5)
+    ] +
+    [MaxPoolingLayer(784, 2, learn_distribution_parameter=True)] + 
+    [
+        [BijectiveLayer(196, [200, 200]), OrthonormalLayer(196)] # 196 = 14^2
+        for _ in range(5)
+    ] +
+    [MaxPoolingLayer(196, 2, learn_distribution_parameter=True)] +
+    [
+        [BijectiveLayer(49, [200, 200]), OrthonormalLayer(49)] # 49 = 7^2
+        for _ in range(5)
+    ] +
+    [MaxPoolingLayerWithHop(49, 3, 2, learn_distribution_parameter=True)] +
+    [
+        [BijectiveLayer(9, [200, 200]), OrthonormalLayer(9)] # 9 = 3^2
+        for _ in range(5)
+    ],
+    name = "SV_MAXPOOL",
+    condition_size = 10,
+)
+
+
+log = sv_maxpool.train(
+    dataset    = mnist_dataset,
+    batch_size = 1000,
+    test_size  = 100,
+    epochs     = 40_000,
+    lr         = 5e-3,
+    log_period = 100,
+    show_tqdm  = True,
+    reconstruction_loss_weight = 0.01,
+    lr_decay_params = {'gamma': 0.95, 'step_size': 500},
+    save_path = './saves/sv_maxpool overnight',
+)

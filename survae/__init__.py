@@ -8,6 +8,8 @@ import torch.nn as nn
 from survae.data import Dataset
 from survae.layer import Layer
 
+from tqdm import trange # this is very important to me (Jannis)
+
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 torch.set_default_device(DEVICE)
@@ -128,17 +130,29 @@ class SurVAE(Layer):
             # decode
             return self.backward(Z_sample, condition)
 
-    def train(self, dataset: Dataset, batch_size: int, test_size: int, epochs: int, lr: float, log_period: int) \
+    def train(self, dataset: Dataset, batch_size: int, test_size: int, epochs: int, lr: float, log_period: int, reconstruction_loss_weight: float = 0.0, lr_decay_params: dict | None = None, show_tqdm: bool = False, save_path: str | None = None) \
             -> dict[int, TrainingSnapshot]:
         """Train the SurVAE model on the given dataset."""
         optimizer = torch.optim.Adam(params=self.parameters(), lr=lr)
 
+        # If learning rate decay parameters are given, instantiate the scheduler.
+        # Else, create a dummy object with the needed function.
+        if lr_decay_params is not None:
+            scheduler = torch.optim.lr_scheduler.StepLR(optimizer, **lr_decay_params)
+        else:
+            class Dummy: pass
+            scheduler = Dummy()
+            scheduler.step = lambda: None
+
+        mse = nn.MSELoss()
         def run(data, labels):
             if labels is not None:
                 labels = Dataset.label_to_one_hot(labels.type(torch.long), self.condition_size)
 
             z, ll = self.forward(data, return_log_likelihood=True, condition=labels)
-            loss = (0.5 * torch.sum(z ** 2) - ll) / len(data)
+            x_tilde = self.backward(z, labels)
+            rec_loss = reconstruction_loss_weight * mse(data, x_tilde)
+            loss = (0.5 * torch.sum(z ** 2) - ll) / len(data) + rec_loss
 
             return loss
 
@@ -152,7 +166,8 @@ class SurVAE(Layer):
 
         trained_models = {}
 
-        for epoch in range(epochs):
+        _iter = trange(epochs) if show_tqdm else range(epochs)
+        for epoch in _iter:
             optimizer.zero_grad()
 
             if labels:
@@ -165,13 +180,19 @@ class SurVAE(Layer):
             loss.backward()
 
             optimizer.step()
+            scheduler.step()
 
             # log possibly for period and always for the last iteration
             if (log_period != 0 and epoch % log_period == 0) or epoch == epochs - 1:
                 loss_test = run(x_test, y_test)
 
-                trained_models[epoch + 1] = TrainingSnapshot(
-                    copy.deepcopy(self.state_dict()), loss.item(), loss_test.item())
+                if save_path is None:
+                    trained_models[epoch + 1] = TrainingSnapshot(
+                        copy.deepcopy(self.state_dict()), loss.item(), loss_test.item())
+                else:
+                    torch.save(self.state_dict(), save_path + f"/epoch_{epoch}.pt")
+                    trained_models[epoch + 1] = TrainingSnapshot(
+                        None, loss.item(), loss_test.item())
 
         return trained_models
 

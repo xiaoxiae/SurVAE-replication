@@ -333,6 +333,7 @@ class MaxPoolingLayer(Layer):
     def __init__(self, size: int, stride: int, exponential_distribution: bool = False, learn_distribution_parameter: bool = False):
         super().__init__()
 
+        self.size = size
         self.width = np.sqrt(size).astype(int) 
 
         assert self.width % stride == 0, "Stride must be a divisor of size!"
@@ -349,7 +350,7 @@ class MaxPoolingLayer(Layer):
             self.lam = lam
         else:
             self.distribution = "half-normal"
-            sigma = 1
+            sigma = torch.tensor(1.0)
             if learn_distribution_parameter:
                 sigma = nn.Parameter(sigma)
             self.sigma = sigma
@@ -369,8 +370,12 @@ class MaxPoolingLayer(Layer):
 
         combined_tensor = torch.stack(l, dim=0)
         Z, _ = torch.max(combined_tensor, dim=0)
-        # return Z.view(-1)
-        return Z.flatten(start_dim=1)
+        Z = Z.flatten(start_dim=1)
+
+        if return_log_likelihood:
+            return Z, 0
+        else:
+            return Z
 
     def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
         Z = Z.view(-1, self.out_width, self.out_width)
@@ -388,11 +393,18 @@ class MaxPoolingLayer(Layer):
         index_mask = (index_places == indices_repeated)
 
         # sample values in (- infty, 0]) with respective distribution
-        if self.distribution == "half-normal":
-            distr = torch.distributions.half_normal.HalfNormal(self.sigma)
-        else:
-            distr = torch.distributions.exponential.Exponential(self.lam)
-        samples = -distr.sample(X_hat.shape)
+        # TODO (Jannis): to make the parameter sigma learnable, I had to redo the sampling so that the
+        # influence of sigma is more obvious to autograd. Maybe I will be bothered to do something similar
+        # for the exponential distribution, but probably not
+
+        # if self.distribution == "half-normal":
+        #     distr = torch.distributions.half_normal.HalfNormal(self.sigma)
+        # else:
+        #     distr = torch.distributions.exponential.Exponential(self.lam)
+        if self.distribution != "half-normal":
+            raise NotImplementedError("Currently no distribution other than half-normal is supported!")
+        # samples = -distr.sample(X_hat.shape)
+        samples = -torch.randn(X_hat.shape).abs() * self.sigma.abs()
 
         X_hat = X_hat + samples * ~index_mask
         
@@ -448,7 +460,7 @@ class MaxPoolingLayerWithHop(Layer):
             self.lam = lam
         else:
             self.distribution = "half-normal"
-            sigma = 1
+            sigma = torch.tensor(1.0)
             if learn_distribution_parameter:
                 sigma = nn.Parameter(sigma)
             self.sigma = sigma
@@ -465,13 +477,17 @@ class MaxPoolingLayerWithHop(Layer):
 
         combined_tensor = torch.stack(l, dim=0)
         Z, _ = torch.max(combined_tensor, dim=0)
+        Z = Z.flatten(start_dim=1)
 
-        return Z.flatten(start_dim=1)
+        if return_log_likelihood:
+            return Z, 0
+        else:
+            return Z
     
     def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
         Z = Z.view(-1, self.out_width, self.out_width)
 
-        _max = Z.max() + 1
+        _max = (Z.max() + 1).item()
         max_max = torch.full((len(Z), self.out_width * self.out_width, self.width, self.width), _max)
 
         batch_indices = torch.arange(len(Z))
@@ -492,11 +508,18 @@ class MaxPoolingLayerWithHop(Layer):
             noise_mask[batch_indices, idx] = False
 
         # sample values in (- infty, 0]) with respective distribution
-        if self.distribution == "half-normal":
-            distr = torch.distributions.half_normal.HalfNormal(self.sigma)
-        else:
-            distr = torch.distributions.exponential.Exponential(self.lam)
-        samples = -distr.sample(noise_mask.shape)
+        # TODO (Jannis): to make the parameter sigma learnable, I had to redo the sampling so that the
+        # influence of sigma is more obvious to autograd. Maybe I will be bothered to do something similar
+        # for the exponential distribution, but probably not
+
+        # if self.distribution == "half-normal":
+        #     distr = torch.distributions.half_normal.HalfNormal(self.sigma)
+        # else:
+        #     distr = torch.distributions.exponential.Exponential(self.lam)
+        if self.distribution != "half-normal":
+            raise NotImplementedError("Currently no distribution other than half-normal is supported!")
+        # samples = -distr.sample(noise_mask.shape)
+        samples = -torch.randn(noise_mask.shape).abs() * self.sigma
 
         X_hat = min_max.flatten(start_dim=1) + (samples * noise_mask)
 
