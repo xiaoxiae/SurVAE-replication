@@ -1,0 +1,1 @@
+used reconstruction loss instead of NLL loss for maxpooling layers
