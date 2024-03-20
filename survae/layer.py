@@ -81,7 +81,7 @@ class OrthonormalLayer(Layer):
         super().__init__()
 
         self.size = size
-        self.o = torch.tensor(ortho_group.rvs(size))
+        self.o = nn.Parameter(torch.tensor(ortho_group.rvs(size)), requires_grad = False)
 
     def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
         Z = X @ self.o
@@ -350,12 +350,14 @@ class MaxPoolingLayer(Layer):
             if learn_distribution_parameter:
                 lam = nn.Parameter(lam)
             self.lam = lam
+            self.distr = torch.distributions.Exponential(lam)
         else:
             self.distribution = "half-normal"
             sigma = torch.tensor(1.0)
             if learn_distribution_parameter:
                 sigma = nn.Parameter(sigma)
             self.sigma = sigma
+            self.distr = torch.distributions.HalfNormal(sigma)
 
 
         self.index_probs = torch.tensor([1 / self.stride**2 for _ in range(self.stride**2)])
@@ -371,11 +373,20 @@ class MaxPoolingLayer(Layer):
                 l.append(X[:, i::self.stride,j::self.stride])
 
         combined_tensor = torch.stack(l, dim=0)
-        Z, _ = torch.max(combined_tensor, dim=0)
-        Z = Z.flatten(start_dim=1)
+        Z_shaped, _ = torch.max(combined_tensor, dim=0)
+        Z = Z_shaped.flatten(start_dim=1)
 
         if return_log_likelihood:
-            return Z, 0
+            Z_repeated = Z_shaped.repeat_interleave(self.stride, dim=1).repeat_interleave(self.stride, dim=2)
+            X_shifted = Z_repeated - X
+
+            # We need to remove the ll contribution of the maxima to the sum below, which is this value.
+            # I don't know of a nicer way to get the total number of entries in a tensor.
+            correction_term = self.distr.log_prob(torch.tensor(0)) * Z.view(-1).shape[0]
+
+            ll = self.distr.log_prob(X_shifted).sum() - correction_term
+
+            return Z, ll
         else:
             return Z
 
@@ -395,18 +406,7 @@ class MaxPoolingLayer(Layer):
         index_mask = (index_places == indices_repeated)
 
         # sample values in (- infty, 0]) with respective distribution
-        # TODO (Jannis): to make the parameter sigma learnable, I had to redo the sampling so that the
-        # influence of sigma is more obvious to autograd. Maybe I will be bothered to do something similar
-        # for the exponential distribution, but probably not
-
-        # if self.distribution == "half-normal":
-        #     distr = torch.distributions.half_normal.HalfNormal(self.sigma)
-        # else:
-        #     distr = torch.distributions.exponential.Exponential(self.lam)
-        if self.distribution != "half-normal":
-            raise NotImplementedError("Currently no distribution other than half-normal is supported!")
-        # samples = -distr.sample(X_hat.shape)
-        samples = -torch.randn(X_hat.shape).abs() * self.sigma.abs()
+        samples = -self.distr.sample(X_hat.shape)
 
         X_hat = X_hat + samples * ~index_mask
         
@@ -460,12 +460,14 @@ class MaxPoolingLayerWithHop(Layer):
             if learn_distribution_parameter:
                 lam = nn.Parameter(lam)
             self.lam = lam
+            self.distr = torch.distributions.Exponential(lam)
         else:
             self.distribution = "half-normal"
             sigma = torch.tensor(1.0)
             if learn_distribution_parameter:
                 sigma = nn.Parameter(sigma)
             self.sigma = sigma
+            self.distr = torch.distributions.HalfNormal(sigma)
 
 
     def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
@@ -478,11 +480,28 @@ class MaxPoolingLayerWithHop(Layer):
                 l.append(X[:, i:i+self.width-self.stride + 1:self.hop,j:j+self.width-self.stride + 1:self.hop])
 
         combined_tensor = torch.stack(l, dim=0)
-        Z, _ = torch.max(combined_tensor, dim=0)
-        Z = Z.flatten(start_dim=1)
+        Z_shaped, _ = torch.max(combined_tensor, dim=0)
+        Z = Z_shaped.flatten(start_dim=1)
 
         if return_log_likelihood:
-            return Z, 0
+            # same as for MaxPoolingLayer, but more fun :)
+            _max = (Z_shaped.max() + 1).item()
+            max_max = torch.full((len(Z_shaped), self.out_width * self.out_width, self.width, self.width), _max)
+
+            batch_indices = torch.arange(len(Z_shaped))
+            for i in range(self.out_width):
+                for j in range(self.out_width):
+                    max_max[batch_indices, j + i * (self.out_width), (self.hop * i):(self.hop * i + self.stride), (self.hop * j):(self.hop * j + self.stride)] = Z_shaped[batch_indices, i, j].unsqueeze(1).unsqueeze(2)
+
+            # This is the best possible name. I will not elaborate.
+            min_max = max_max.min(dim=1)[0]
+
+            X_shifted = min_max - X
+
+            correction_term = self.distr.log_prob(torch.tensor(0)) * Z_shaped.view(-1).shape[0]
+            ll = self.distr.log_prob(X_shifted).sum() - correction_term
+
+            return Z, ll
         else:
             return Z
     
@@ -510,18 +529,7 @@ class MaxPoolingLayerWithHop(Layer):
             noise_mask[batch_indices, idx] = False
 
         # sample values in (- infty, 0]) with respective distribution
-        # TODO (Jannis): to make the parameter sigma learnable, I had to redo the sampling so that the
-        # influence of sigma is more obvious to autograd. Maybe I will be bothered to do something similar
-        # for the exponential distribution, but probably not
-
-        # if self.distribution == "half-normal":
-        #     distr = torch.distributions.half_normal.HalfNormal(self.sigma)
-        # else:
-        #     distr = torch.distributions.exponential.Exponential(self.lam)
-        if self.distribution != "half-normal":
-            raise NotImplementedError("Currently no distribution other than half-normal is supported!")
-        # samples = -distr.sample(noise_mask.shape)
-        samples = -torch.randn(noise_mask.shape).abs() * self.sigma
+        samples = -self.distr.sample(noise_mask.shape)
 
         X_hat = min_max.flatten(start_dim=1) + (samples * noise_mask)
 

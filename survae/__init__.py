@@ -130,7 +130,7 @@ class SurVAE(Layer):
             # decode
             return self.backward(Z_sample, condition)
 
-    def train(self, dataset: Dataset, batch_size: int, test_size: int, epochs: int, lr: float, log_period: int, reconstruction_loss_weight: float = 0.0, lr_decay_params: dict | None = None, show_tqdm: bool = False, save_path: str | None = None) \
+    def train(self, dataset: Dataset, batch_size: int, test_size: int, epochs: int, lr: float, log_period: int, lr_decay_params: dict | None = None, show_tqdm: bool = False, save_path: str | None = None) \
             -> dict[int, TrainingSnapshot]:
         """Train the SurVAE model on the given dataset."""
         optimizer = torch.optim.Adam(params=self.parameters(), lr=lr)
@@ -144,15 +144,12 @@ class SurVAE(Layer):
             scheduler = Dummy()
             scheduler.step = lambda: None
 
-        mse = nn.MSELoss()
         def run(data, labels):
             if labels is not None:
                 labels = Dataset.label_to_one_hot(labels.type(torch.long), self.condition_size)
 
             z, ll = self.forward(data, return_log_likelihood=True, condition=labels)
-            x_tilde = self.backward(z, labels)
-            rec_loss = reconstruction_loss_weight * mse(data, x_tilde)
-            loss = (0.5 * torch.sum(z ** 2) - ll) / len(data) + rec_loss
+            loss = (0.5 * torch.sum(z ** 2) - ll) / len(data)
 
             return loss
 
