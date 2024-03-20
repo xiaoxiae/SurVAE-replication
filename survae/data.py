@@ -328,48 +328,48 @@ class SpatialMNIST(Dataset):
         self._k = k
         self._flatten = flatten
 
+        # Fetch the MNIST dataset
+        mnist = fetch_openml('mnist_784', version=1, parser='auto', cache=True)
+
+        # Convert to numpy array
+        mnist_images = np.array(mnist.data)
+        mnist_labels = np.array(mnist.target.astype(int))
+
+        # Normalize
+        mnist_images_normalized = mnist_images / mnist_images.sum(axis=1, keepdims=True)
+
+        # store
+        self.mnist_images_normalized = mnist_images_normalized
+        self.mnist_labels = mnist_labels
+
     def get_categories(self) -> int:
         return 10
 
+    def _sample_points(self, image: np.ndarray, n: int = 50):
+        # Sample n points using the pixel values as weights
+        sampled_indices = np.random.choice(len(image), size=n, p=image)
+
+        # Assume the image is square
+        n = int((image.shape[0]) ** (1 / 2))
+
+        assert n ** 2 == image.shape[0]
+
+        # Convert sampled indices back to coordinates in the original image
+        sampled_points = np.unravel_index(sampled_indices, (n, n))
+
+        sampled_points_array = np.column_stack(sampled_points)[:, ::-1] \
+            .astype(float)
+
+        # We want to uniformly sample from each pixel so offset randomly by +-0.5
+        noise = np.random.uniform(-0.5, 0.5, size=sampled_points_array.shape)
+        sampled_points_array += noise
+
+        return sampled_points_array
+
     def __call__(self, n: int):
-        @cache
-        def _get_mnist(name='mnist_784', version=1):
-            # Fetch the MNIST dataset
-            mnist = fetch_openml(name, version=version, parser='auto', cache=True)
+        images, y = self.mnist_images_normalized, self.mnist_labels
 
-            # Convert to numpy array
-            mnist_images = np.array(mnist.data)
-            mnist_labels = np.array(mnist.target.astype(int))
-
-            # Normalize
-            mnist_images_normalized = mnist_images / mnist_images.sum(axis=1, keepdims=True)
-
-            return mnist_images_normalized, mnist_labels
-
-        def _sample_points(image: np.ndarray, n: int = 50):
-            # Sample n points using the pixel values as weights
-            sampled_indices = np.random.choice(len(image), size=n, p=image)
-
-            # Assume the image is square
-            n = int((image.shape[0]) ** (1 / 2))
-
-            assert n ** 2 == image.shape[0]
-
-            # Convert sampled indices back to coordinates in the original image
-            sampled_points = np.unravel_index(sampled_indices, (n, n))
-
-            sampled_points_array = np.column_stack(sampled_points)[:, ::-1] \
-                .astype(float)
-
-            # We want to uniformly sample from each pixel so offset randomly by +-0.5
-            noise = np.random.uniform(-0.5, 0.5, size=sampled_points_array.shape)
-            sampled_points_array += noise
-
-            return sampled_points_array
-
-        images, y = _get_mnist()
-
-        # Sample 'size' images randomly
+        # Sample n images randomly
         idxs = np.random.choice(len(images), size=n, replace=False)
         images = images[idxs]
         y = y[idxs]
@@ -377,7 +377,7 @@ class SpatialMNIST(Dataset):
         sampled_points_all_images = []
 
         for i, image in enumerate(images):
-            sampled_points = _sample_points(image, self._k)
+            sampled_points = self._sample_points(image, self._k)
 
             if self._flatten:
                 sampled_points = sampled_points.flatten()

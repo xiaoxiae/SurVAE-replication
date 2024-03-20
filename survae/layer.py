@@ -561,10 +561,43 @@ class DequantizationLayer(Layer):
         return None
 
     def out_size(self) -> int | None:
-        return 
+        return None
+
+
+def apply_randperm(X: torch.Tensor) -> torch.Tensor:
+    """
+    Vectorized helper function for PermutationLayer and SortingLayer.
+    Applies a random permutation to the last axis of X for each entry along its
+    first axis.
+    """
+    # I haven't checked that this algorithm picks the
+    # permutations uniformly at random, but I don't see why it shouldn't.
+
+    # First, sample random values of shape (N, D).
+    N = X.shape[0]
+    D = X.shape[-1]
+    rp = torch.rand(N, D)
+
+    # Then, sort each row and take the indices of that sorting step.
+    # This yields a random permutation of length D for each row.
+    # The result is flattened for the next step.
+    perms = rp.sort(dim=1).indices.flatten()
+
+    # Finally, apply the permutations of the last axis along the first axis while
+    # keeping the inner axes unchanged.
+    # Think of the index ranges as lists of indices that we want to set iteratively,
+    # except that it happens simultaneously.
+    idx_n = torch.arange(N).repeat_interleave(D)
+    idx_d = torch.arange(D).repeat(N)
+
+    Z = torch.empty_like(X)
+    Z[idx_n, ..., idx_d] = X[idx_n, ..., perms]
+
+    return Z
 
 
 class SortingLayer(Layer):
+    """Sorts the data along the last axis."""
     def __init__(self):
         super().__init__()
 
@@ -576,10 +609,7 @@ class SortingLayer(Layer):
             return Z
 
     def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
-        X = torch.zeros_like(Z)
-        # randomly permute Z
-        for i in range(Z.shape[0]):
-            X[i] = Z[i][torch.randperm(Z.shape[1])]
+        X = apply_randperm(Z)
 
         return X
 
@@ -591,14 +621,12 @@ class SortingLayer(Layer):
 
 
 class PermutationLayer(Layer):
+    """Randomly permutes the data along the last axis."""
     def __init__(self):
         super().__init__()
 
     def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
-        Z = torch.zeros_like(X)
-        # randomly permute X
-        for i in range(X.shape[0]):
-            Z[i] = X[i, ..., torch.randperm(X.shape[-1])]
+        Z = apply_randperm(X)
 
         if return_log_likelihood:
             return Z, 0
@@ -606,10 +634,7 @@ class PermutationLayer(Layer):
             return Z
 
     def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
-        X = torch.zeros_like(Z)
-        # randomly permute Z
-        for i in range(Z.shape[0]):
-            X[i] = Z[i, ..., torch.randperm(Z.shape[-1])]
+        X = apply_randperm(Z)
 
         return X
 
@@ -675,3 +700,85 @@ class SliceLayer(Layer):
 
     def out_size(self) -> int | None:
         return self.new_size
+
+
+class PermuteAxesLayer(Layer):
+    """Permutes the axes of the data. Only useful for multidimensional data."""
+    def __init__(self, permutation: tuple[int]):
+        """
+        The permutation is only applied to the data axes, not on the batch axis.
+        In particular, index 0 refers to the first data axis and not the batch axis!
+        """
+        super().__init__()
+
+        assert set(permutation) == set(range(len(permutation))), f"Tuple '{permutation}' is not a permutation!"
+
+        # convert to tensor
+        perm = torch.tensor(permutation)
+
+        # store shifted version (because index 0 will be batch axis)
+        self.perm = (perm + 1).tolist()
+
+        # the inverse permutation is the "argsort" of the permutation
+        inv_perm = torch.sort(perm).indices
+
+        # again store shifted version
+        self.inv_perm = (inv_perm + 1).tolist()
+
+
+    def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
+        Z = X.permute(0, *self.perm)
+
+        if return_log_likelihood:
+            return Z, 0
+        else:
+            return Z
+
+    def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
+        X = Z.permute(0, *self.inv_perm)
+
+        return X
+    
+    def in_size(self) -> int | None:
+        return None
+    
+    def out_size(self) -> int | None:
+        return None
+    
+
+class ReshapeLayer(Layer):
+    "Reshapes data."
+    def __init__(self, in_shape: tuple[int] | int, out_shape: tuple[int] | int):
+        """
+        in_shape and out_shape should not include the batch axis!
+        """
+        super().__init__()
+
+        if isinstance(in_shape, int):
+            in_shape = (in_shape,)
+        if isinstance(out_shape, int):
+            out_shape = (out_shape,)
+
+        self.in_shape = in_shape
+        self.out_shape = out_shape
+
+        self._in_size = torch.prod(torch.tensor(in_shape)).item()
+        self._out_size = torch.prod(torch.tensor(out_shape)).item()
+    
+    def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
+        Z = X.reshape(-1, *self.out_shape)
+
+        if return_log_likelihood:
+            return Z, 0
+        else:
+            return Z
+
+    def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
+        X = Z.reshape(-1, *self.in_shape)
+        return X
+
+    def in_size(self) -> int | None:
+        return self._in_size
+
+    def out_size(self) -> int | None:
+        return self._out_size
