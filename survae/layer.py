@@ -256,7 +256,7 @@ class AbsoluteUnit(Layer):
 
 # TODO think about putting gamma instead of exponential distribution
 class MaxTheLayer(Layer):
-    def __init__(self, size: int, learn_index_probs: bool = False, learn_lambda: bool = False):
+    def __init__(self, size: int, learn_index_probs: bool = False, learn_sigma: bool = False):
         super().__init__()
 
         self.size = size
@@ -264,16 +264,16 @@ class MaxTheLayer(Layer):
         # if unspecified we use the categorical distribution with equal prob for all the categories
         index_probs = torch.tensor([1 / size for _ in range(size)])
 
-        lam = torch.tensor([0.1])
+        sigma = torch.tensor(0.1)
 
         if learn_index_probs:
             index_probs = nn.Parameter(index_probs)
 
-        if learn_lambda:
-            lam = nn.Parameter(lam)
+        if learn_sigma:
+            sigma = nn.Parameter(lam)
 
         self.index_probs = index_probs
-        self.lam = lam
+        self.sigma = sigma
 
     def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
 
@@ -281,10 +281,10 @@ class MaxTheLayer(Layer):
 
         if return_log_likelihood:
 
-            exp_distr = torch.distributions.exponential.Exponential(self.lam)
+            distr = torch.distributions.half_normal.HalfNormal(self.sigma)
 
             ll_q = - torch.sum(log(torch.ones_like(X) * self.index_probs[max_index])) - torch.sum(
-                exp_distr.log_prob(torch.cat((X[:max_index], X[max_index + 1:]))))
+                distr.log_prob(torch.cat((X[:max_index], X[max_index + 1:]))))
 
             return max_val, ll_q
         else:
@@ -292,11 +292,11 @@ class MaxTheLayer(Layer):
 
     def backward(self, Z: torch.Tensor, condition: torch.Tensor | None = None):
         # sample smaller values for the indices from exponential distribution
-        exp_distr = torch.distributions.exponential.Exponential(self.lam)
+        distr = torch.distributions.half_normal.HalfNormal(self.sigma)
 
         X_shape = torch.cat((torch.tensor([len(Z)]), torch.tensor([self.size])))
 
-        X = exp_distr.sample(X_shape).squeeze()
+        X = distr.sample(X_shape).squeeze()
         X = Z.view(-1, 1).expand(tuple(X_shape)) - X
 
         # sample index for max_val
@@ -305,14 +305,14 @@ class MaxTheLayer(Layer):
         X[torch.arange(X.shape[0]), indices] = Z.squeeze()
 
         return X
-
+    
     def in_size(self) -> int | None:
         return self.size
 
     def out_size(self) -> int | None:
         return 1
 
-
+        
 class MaxPoolingLayer(Layer):
     '''
     MaxPoolingLayer: Layer that performs max pooling on the input data.
