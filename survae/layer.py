@@ -209,7 +209,7 @@ class BijectiveLayer(Layer):
         return self.size
 
 
-class AbsoluteUnit(Layer):
+class AbsoluteLayer(Layer):
     def __init__(self, q: torch.Tensor, learn_q: bool = False):
         '''
         Performs the absolute value inference surjection.
@@ -253,8 +253,10 @@ class AbsoluteUnit(Layer):
     def out_size(self) -> int | None:
         return self.size
 
+# We wanted to change the name to something more serious and descriptive, but wanted to keep the joke in the background.
+AbsoluteUnit = AbsoluteLayer
 
-# TODO think about putting gamma instead of exponential distribution
+
 class MaxTheLayer(Layer):
     def __init__(self, size: int, learn_index_probs: bool = False, learn_sigma: bool = False):
         super().__init__()
@@ -270,7 +272,7 @@ class MaxTheLayer(Layer):
             index_probs = nn.Parameter(index_probs)
 
         if learn_sigma:
-            sigma = nn.Parameter(lam)
+            sigma = nn.Parameter(sigma)
 
         self.index_probs = index_probs
         self.sigma = sigma
@@ -312,7 +314,7 @@ class MaxTheLayer(Layer):
     def out_size(self) -> int | None:
         return 1
 
-        
+
 class MaxPoolingLayer(Layer):
     '''
     MaxPoolingLayer: Layer that performs max pooling on the input data.
