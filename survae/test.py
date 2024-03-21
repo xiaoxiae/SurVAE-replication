@@ -124,7 +124,7 @@ class LayerTest(unittest.TestCase):
 class DatasetTest(unittest.TestCase):
     def test_dataset(self):
         # all datasets
-        for dataset in ALL_DATASETS:
+        for dataset in ALL_DATASETS():
             for f in [lambda d: d, lambda d: d.skew()]:
                 f(dataset)
 

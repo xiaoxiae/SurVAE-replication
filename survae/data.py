@@ -535,6 +535,9 @@ class Gradient(Dataset):
         return X, y.int()
 
 
-TWO_D_DATASETS = [Ngon(), Corners(), Circles(), Checkerboard(), Spiral(), Moons(), SplitLine(), Gradient()]
-MULTI_D_DATASETS = [SpatialMNIST()]
-ALL_DATASETS = TWO_D_DATASETS + MULTI_D_DATASETS
+# (Jannis) I had to change these lists to only be created when they're actually needed because for some reason
+# my PC can't load MNIST via _fetch_openml, and since this file is loaded in survae.__init__ I couldn't do
+# anything without it crashing :(
+TWO_D_DATASETS = lambda: [Ngon(), Corners(), Circles(), Checkerboard(), Spiral(), Moons(), SplitLine(), Gradient()]
+MULTI_D_DATASETS = lambda: [SpatialMNIST()]
+ALL_DATASETS = lambda: TWO_D_DATASETS() + MULTI_D_DATASETS()
