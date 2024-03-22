@@ -1,2 +1,4 @@
 Same loss curve as overnight-2, but samples are worse (putting it lightly).
 Loss must be screwed, try weighing first loss term with 0.45 (learned sigma).
+
+This run is not included in the report!
