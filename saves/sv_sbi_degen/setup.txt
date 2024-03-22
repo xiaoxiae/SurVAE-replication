@@ -1,0 +1,24 @@
+sv_sir_degen = SurVAE(
+    [
+        [BijectiveLayer(4, [150, 150]), OrthonormalLayer(4)]
+        for _ in range(30)
+    ],
+    name="NF",
+    condition_size=100,
+    summary=FFNN(200, [200, 200], 100),
+)
+
+
+train_log = sv_sir_degen.train(
+    dataset = sir_degen_dataset,
+    batch_size = 200,
+    test_size  = 1_000,
+    epochs     = 2_000,
+    lr         = 5e-3,
+    log_period = 100,
+    use_one_hot = False,
+    lr_decay_params={'gamma': 0.9, 'step_size': 50},
+    show_tqdm=True,
+    save_path=SAVE_PATH,
+    record_std=True,
+)

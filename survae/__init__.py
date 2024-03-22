@@ -131,9 +131,24 @@ class SurVAE(Layer):
             # decode
             return self.backward(Z_sample, condition)
 
-    def train(self, dataset: Dataset, batch_size: int, test_size: int, epochs: int, lr: float, log_period: int, lr_decay_params: dict | None = None, show_tqdm: bool = False, save_path: str | None = None, record_std: bool = False) \
+    def train(self, dataset: Dataset, batch_size: int, test_size: int, epochs: int, lr: float, log_period: int, use_one_hot: bool = True, lr_decay_params: dict | None = None, show_tqdm: bool = False, save_path: str | None = None, record_std: bool = False) \
             -> dict[int, TrainingSnapshot]:
-        """Train the SurVAE model on the given dataset."""
+        """
+        Train the SurVAE model on the given dataset.
+        
+        ### Inputs:
+        * dataset: Dataset from which to sample. Labels are sampled if and only if the model is conditional.
+        * batch_size: Batch size.
+        * test_size: Size of test set. Used for computing test loss and standard deviation. The latter neccessitates a reasonably large value.
+        * epochs: Number of epochs.
+        * lr: Initial learning rate.
+        * log_period: Number of epochs between saving the model.
+        * use_one_hot: Whether to convert the labels from 'dataset' to a one-hot encoding. Irrelevant if the model is unconditional.
+        * lr_decay_params: Contains parameters that are given to the learning rate decay scheduler (torch.optim.lr_scheduler.StepLR). If desired, use something like {'gamma': 0.9, 'step_size': 50}.
+        * show_tqdm: Whether to print a tqdm loading bar for the epochs.
+        * save_path: Where to store the model, if at all. Should point to a directory.
+        * record_std: Whether to compute and record the standard deviation of the code distribution from the test set. May be useful for issue tracing.
+        """
         optimizer = torch.optim.Adam(params=self.parameters(), lr=lr)
 
         # If learning rate decay parameters are given, instantiate the scheduler.
@@ -146,7 +161,7 @@ class SurVAE(Layer):
             scheduler.step = lambda: None
 
         def run(data, labels, _record_std):
-            if labels is not None:
+            if labels is not None and use_one_hot:
                 labels = Dataset.label_to_one_hot(labels.type(torch.long), self.condition_size)
 
             z, ll = self.forward(data, return_log_likelihood=True, condition=labels)

@@ -105,6 +105,7 @@ def plot_learned_distribution(
         bins: int = 40,
         alpha: float = 0.15,
         sigma: float = 1.0,
+        plot_gaussian: bool = True,
 ):
     '''
     Check if a distribution looks gaussian in 1D and 2D.
@@ -119,6 +120,7 @@ def plot_learned_distribution(
     * bins: Number of bins in the 1D plots.
     * alpha: Transparency of the scattered points.
     * sigma: Standard deviation of the normal distribution to compare with.
+    * plot_gaussian: Whether to plot the comparison PDF of the standard normal distribution.
     '''
     n = Y.shape[-1] # number of parameters
 
@@ -138,15 +140,19 @@ def plot_learned_distribution(
 
             if i == k:
                 _ax.hist(Y[:, i], bins=bins, density=True, range=(-axis_scale, axis_scale))
-                _ax.plot(x_axis, y_gaussian, color='r')
+
+                if plot_gaussian:
+                    _ax.plot(x_axis, y_gaussian, color='r')
 
                 _ax.set_xlim(-axis_scale, axis_scale)
             else:
                 # the y axis is flipped so that the graphs are mirrored on the diagonal
                 # (e.g. subplot (1, 2) is a mirror image of subplot (2, 1))
                 _ax.scatter(Y[:, i], -Y[:, k], s=1, alpha=alpha)
-                _ax.plot(0, 0, 'ro', markersize=2)
-                _ax.add_patch(plt.Circle((0, 0), radius=circle_radius, color='r', fill=False))
+
+                if plot_gaussian:
+                    # _ax.plot(0, 0, 'ro', markersize=2)
+                    _ax.add_patch(plt.Circle((0, 0), radius=circle_radius, color='r', fill=False))
 
                 _ax.set_xlim(-axis_scale, axis_scale)
                 _ax.set_ylim(-axis_scale, axis_scale)
@@ -157,7 +163,7 @@ def plot_learned_distribution(
     plt.show()
 
 
-def resimulate(model: SurVAE, sim, Y: torch.Tensor, n_samples: int = 50):
+def resimulate(model: SurVAE, sim, Y: torch.Tensor, n_samples: int = 50, return_samples: bool = False):
     '''
     Perform a resimulation of parameters predicted by the model.
 
@@ -166,6 +172,7 @@ def resimulate(model: SurVAE, sim, Y: torch.Tensor, n_samples: int = 50):
     * sim: Simulation function.
     * Y: Tensor of shape (C, D), where C is the number of conditions and D is the number of parameters.
     * n_samples: Number of samples per condition.
+    * return_samples: Whether to return the parameters sampled by the model.
     '''
     n_conditions = len(Y)
     X = sim(Y)
@@ -176,27 +183,38 @@ def resimulate(model: SurVAE, sim, Y: torch.Tensor, n_samples: int = 50):
     X_resim: torch.Tensor = sim(Y_hat)
     X_resim = X_resim.reshape(n_conditions, n_samples, -1)
 
-    return X_resim
+    if return_samples:
+        return X_resim, Y_hat.reshape(n_conditions, n_samples, -1)
+    else:
+        return X_resim
 
 
 def plot_resimulation(GT: torch.Tensor, X_resim: torch.Tensor, **kwargs):
     '''
     Plot data produced by "resimulate". The two functions are separate to allow for data cleanup of the resimulation output.
-    The kwargs are passed to "plt.figure".
 
     ### Inputs:
-    * GT: Ground-truth simulation which was resimulated. Has shape (D,).
-    * X_resim: Resimulation data. Has shape (N_SAMPLES, D).
+    * GT: Ground-truth simulation which was resimulated. Has shape (D, 2).
+    * X_resim: Resimulation data. Has shape (N_SAMPLES, D, 2).
+    * kwargs: Passed to "plt.figure".
     '''
+    GT = GT.cumsum(dim=0)
+    X_resim = X_resim.cumsum(dim=1)
+
     means = X_resim.mean(dim=0).cpu().numpy()
     quantiles = X_resim.quantile(torch.tensor([0.05, 0.95]), dim=0).cpu().numpy()
     _x = np.arange(len(GT))
 
     plt.figure(**kwargs)
-    plt.fill_between(_x, quantiles[0, :], quantiles[1, :], alpha=0.2, label='90%')
-    plt.plot(_x, means, linestyle='--', alpha=0.8, label='Mean')
-    plt.plot(_x, GT.cpu().numpy(), label='Ground truth')
+    plt.fill_between(_x, quantiles[0, :, 0], quantiles[1, :, 0], alpha=0.2, color='orange', label='1-S 90%')
+    plt.plot(_x, means[:, 0], linestyle='--', alpha=0.8, color='orange', label='1-S Mean')
+    plt.plot(_x, GT[:, 0].cpu().numpy(), color='orange', label='1-S Ground truth')
+    plt.fill_between(_x, quantiles[0, :, 1], quantiles[1, :, 1], alpha=0.2, color='blue', label='R 90%')
+    plt.plot(_x, means[:, 1], linestyle='--', alpha=0.8, color='blue', label='R Mean')
+    plt.plot(_x, GT[:, 1].cpu().numpy(), color='blue', label='R Ground truth')
 
+    plt.xlabel("Time")
+    plt.ylabel("Population fraction")
     plt.legend(bbox_to_anchor=(1, 1))
     plt.grid()
     plt.show()

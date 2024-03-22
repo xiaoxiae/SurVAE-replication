@@ -565,6 +565,195 @@ class Gradient(Dataset):
         return X, y.int()
 
 
+class SIR_Basic(Dataset):
+    def __init__(self, shuffle=True, name=None, **kwargs):
+        """kwargs are passed to the simulation."""
+        super().__init__(shuffle, name)
+        self.kwargs = kwargs
+    
+    def get_categories(self) -> int:
+        """Not every kind of label is a one-hot encoding, Tom."""
+        raise TypeError("SIR dataset labels don't have categories!")
+    
+    def _sample_parameters(self, n_samples: int) -> torch.Tensor:
+        '''
+        Generate sensible parameter values for the simulation. Uses Gaussian distribution for all three parameters.
+
+        ### Input:
+        * n_samples: Number of samples to be generated
+
+        ### Output:
+        Tensor with shape (n_sample) x 3
+        '''
+        # Priors of each parameter
+        lam = torch.normal(0.5, 0.1, size=(n_samples,))
+        mu  = torch.normal(0.25, 0.1, size=(n_samples,))
+        I_0 = torch.normal(0.06, 0.05, size=(n_samples,))
+
+        # I_0 must not be larger than 1
+        I_0[I_0 > 1] = 1
+
+        Y = torch.stack((lam, mu, I_0)).T.to(survae.DEVICE)
+
+        # make sure all parameters are non-negative
+        Y = torch.abs(Y)
+
+        return Y
+    
+    def _simulate(self, Y: torch.Tensor, steps_per_day: int = 10, n_days: int = 100, flatten: bool = True):
+        '''
+        Simulates the most basic SIR model, given parameters lambda, mu, and I_0.
+
+        ### Inputs:
+        * Y: Initial values with shape (N, 3) containing lambda, mu, and I_0 (in this order) for N simulations.
+        * steps_per_day: Number of simulation steps per unit of time.
+        * n_days: Number of units of time to simulate.
+        * flatten: Whether to flatten the output for each simulation.
+
+        ### Output:
+        Tensor with shape (N, n_days, 2) containing dS and dR (in this order) for each simulation and unit of time.
+        If 'flatten' is True, the tensor will instead have shape (N, n_days * 2)
+        '''
+        # extract initial values
+        lam = Y[:, 0]
+        mu = Y[:, 1]
+        I_0 = Y[:, 2]
+
+        h = 1 / steps_per_day      # step size
+        n = len(Y)                 # number of samples, i.e. simulations
+        t = steps_per_day * n_days # number of simulation steps
+
+        C = torch.zeros((n, t+1, 2)) # contains S & R for each simulation and timestep
+        C[:, 0, 0] = 1 - I_0
+
+        for i in range(t):
+            # define S, I, R
+            S = C[:, i, 0]
+            R = C[:, i, 1]
+            I = 1 - S - R
+
+            # compute derivatives
+            dS = -lam * S * I
+            dR = mu * I
+
+            # compute one step
+            C[:, i+1, 0] = S + h * dS
+            C[:, i+1, 1] = R + h * dR
+        
+        # compute the desired output
+        X = C[:, 1::steps_per_day] - C[:, :-1:steps_per_day]
+        X[:, :, 0] *= -1 # convention necessitates that dS change sign
+
+        if flatten:
+            X = X.flatten(start_dim=1)
+
+        return X
+    
+    def __call__(self, n: int) -> tuple[torch.Tensor, torch.Tensor]:
+        Y = self._sample_parameters(n)
+        X = self._simulate(Y, **self.kwargs)
+
+        return Y, X # the parameters are the data and the simulation is the condition!
+
+
+class SIR_Degenerate(Dataset):
+    def __init__(self, shuffle=True, name=None, **kwargs):
+        """kwargs are passed to the simulation."""
+        super().__init__(shuffle, name)
+
+        self.kwargs = kwargs
+    
+    def get_categories(self) -> int:
+        """Not every kind of label is a one-hot encoding, Tom."""
+        raise TypeError("Degenerate SIR dataset labels don't have categories!")
+    
+    def _sample_parameters(self, n_samples:int) -> torch.Tensor:
+        '''
+        Generate sensible parameter values for the simulation. Uses Gaussian distribution for all parameters.
+        In contrast to the non-degenerate case, this function generates two values for lambda.
+
+        ### Input:
+        - n_samples: Number of samples to be generated
+
+        ### Output:
+        Tensor with shape (n_sample) x 4
+        '''
+        # Priors of each parameter
+        # The values for lam1 and lam2 are chosen such that the distribution of lam1 * lam2
+        # closely resembles that of lam from SIR_Basic
+        lam1 = torch.normal(8 / 10, 0.06, size=(n_samples,))
+        lam2 = torch.normal(5 /  8, 0.11, size=(n_samples,))
+        mu  = torch.normal(0.25, 0.1, size=(n_samples,))
+        I_0 = torch.normal(0.06, 0.05, size=(n_samples,))
+
+        # I_0 must not be larger than 1
+        I_0[I_0 > 1] = 1
+
+        Y = torch.stack((lam1, lam2, mu, I_0)).T.to(survae.DEVICE)
+
+        # make sure all parameters are non-negative
+        Y = torch.abs(Y)
+
+        return Y
+    
+    def _simulate(self, Y: torch.Tensor, steps_per_day: int = 10, n_days: int = 100, flatten: bool = True):
+        '''
+        Simulates the most basic SIR model, given parameters lambda1, lambda2, mu, and I_0.
+
+        ### Inputs:
+        * Y: Initial values with shape (N, 4) containing lambda1, lambda2, mu, and I_0 (in this order) for N simulations.
+        * steps_per_day: Number of simulation steps per unit of time.
+        * n_days: Number of units of time to simulate.
+        * flatten: Whether to flatten the output for each simulation.
+
+        ### Output:
+        Tensor with shape (N, n_days, 2) containing dS and dR (in this order) for each simulation and unit of time.
+        If 'flatten' is True, the tensor will instead have shape (N, n_days * 2)
+        '''
+        # extract initial values
+        lam1 = Y[:, 0]
+        lam2 = Y[:, 1]
+        lam = lam1 * lam2
+        mu = Y[:, 2]
+        I_0 = Y[:, 3]
+
+        h = 1 / steps_per_day      # step size
+        n = len(Y)                 # number of samples, i.e. simulations
+        t = steps_per_day * n_days # number of simulation steps
+
+        C = torch.zeros((n, t+1, 2)) # contains S & R for each simulation and timestep
+        C[:, 0, 0] = 1 - I_0
+
+        for i in range(t):
+            # define S, I, R
+            S = C[:, i, 0]
+            R = C[:, i, 1]
+            I = 1 - S - R
+
+            # compute derivatives
+            dS = -lam * S * I
+            dR = mu * I
+
+            # compute one step
+            C[:, i+1, 0] = S + h * dS
+            C[:, i+1, 1] = R + h * dR
+        
+        # compute the desired output
+        X = C[:, 1::steps_per_day] - C[:, :-1:steps_per_day]
+        X[:, :, 0] *= -1 # convention necessitates that dS change sign
+
+        if flatten:
+            X = X.flatten(start_dim=1)
+
+        return X
+    
+    def __call__(self, n: int) -> tuple[torch.Tensor, torch.Tensor]:
+        Y = self._sample_parameters(n)
+        X = self._simulate(Y, **self.kwargs)
+
+        return Y, X # the parameters are the data and the simulation is the condition!
+
+
 # (Jannis) I had to change these lists to only be created when they're actually needed because for some reason
 # my PC can't load MNIST via _fetch_openml, and since this file is loaded in survae.__init__ I couldn't do
 # anything without it crashing :(

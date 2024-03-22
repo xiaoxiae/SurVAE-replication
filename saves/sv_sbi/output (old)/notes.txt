@@ -1,0 +1,2 @@
+This is the output of the SBI model before fixing BijectiveLayer.
+Also, the degeneracy parameters lambda_1 and lambda_2 are added instead of multiplied :)
