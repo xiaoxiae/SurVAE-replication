@@ -287,18 +287,47 @@ class Checkerboard(Dataset):
         return X, torch.tensor(categories).int()
 
 
+def _load_mnist() -> tuple[np.ndarray, np.ndarray]:
+    """
+    Helper function for MNIST_784 and SpatialMNIST dataset.
+    This is needed because torchvision.datasets.MNIST doesn't work for Mary and
+    fetch_openml doesn't work for Jannis, so this function attempts both.
+
+    Returns MNIST image data (flattened) and target as numpy arrays.
+    """
+    try:
+        # Fetch the MNIST dataset
+        mnist = fetch_openml('mnist_784', version=1, parser='auto', cache=True)
+
+        # Convert to numpy array
+        mnist_images = np.array(mnist.data)
+        mnist_labels = np.array(mnist.target.astype(int))
+    except Exception:
+        # Fetch the MNIST dataset
+        mnist = datasets.MNIST(root='./data', train=True, download=True)
+
+        mnist_images = np.array((mnist.data).double().flatten(start_dim=1))
+        mnist_labels = np.array(mnist.targets)
+    
+    return mnist_images, mnist_labels
+
+
+
 class MNIST_784(Dataset):
     """
     Load the 28x28 MNIST dataset.
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        
-        # immediately load the dataset for later use
-        mnist = datasets.MNIST(root='./data', train=True, download=True)
 
-        self.mnist_images = (mnist.data).double().flatten(start_dim=1).to(survae.DEVICE)
-        self.mnist_labels = mnist.targets.to(survae.DEVICE)
+        # immediately load the dataset for later use
+        # mnist = datasets.MNIST(root='./data', train=True, download=True)
+
+        # self.mnist_images = (mnist.data).double().flatten(start_dim=1).to(survae.DEVICE)
+        # self.mnist_labels = mnist.targets.to(survae.DEVICE)
+        mnist_images, mnist_labels = _load_mnist()
+        self.mnist_images = torch.tensor(mnist_images)
+        self.mnist_labels = torch.tensor(mnist_labels)
 
         self.size = len(self.mnist_labels)
     
@@ -329,11 +358,12 @@ class SpatialMNIST(Dataset):
         self._flatten = flatten
 
         # Fetch the MNIST dataset
-        mnist = fetch_openml('mnist_784', version=1, parser='auto', cache=True)
+        # mnist = fetch_openml('mnist_784', version=1, parser='auto', cache=True)
 
-        # Convert to numpy array
-        mnist_images = np.array(mnist.data)
-        mnist_labels = np.array(mnist.target.astype(int))
+        # # Convert to numpy array
+        # mnist_images = np.array(mnist.data)
+        # mnist_labels = np.array(mnist.target.astype(int))
+        mnist_images, mnist_labels = _load_mnist()
 
         # Normalize
         mnist_images_normalized = mnist_images / mnist_images.sum(axis=1, keepdims=True)

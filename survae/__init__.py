@@ -21,6 +21,7 @@ class TrainingSnapshot:
     model_state: dict
     training_loss: float
     testing_loss: float
+    sigma: float | None
 
 
 class SurVAE(Layer):
@@ -130,7 +131,7 @@ class SurVAE(Layer):
             # decode
             return self.backward(Z_sample, condition)
 
-    def train(self, dataset: Dataset, batch_size: int, test_size: int, epochs: int, lr: float, log_period: int, lr_decay_params: dict | None = None, show_tqdm: bool = False, save_path: str | None = None) \
+    def train(self, dataset: Dataset, batch_size: int, test_size: int, epochs: int, lr: float, log_period: int, lr_decay_params: dict | None = None, show_tqdm: bool = False, save_path: str | None = None, record_std: bool = False) \
             -> dict[int, TrainingSnapshot]:
         """Train the SurVAE model on the given dataset."""
         optimizer = torch.optim.Adam(params=self.parameters(), lr=lr)
@@ -144,14 +145,18 @@ class SurVAE(Layer):
             scheduler = Dummy()
             scheduler.step = lambda: None
 
-        def run(data, labels):
+        def run(data, labels, _record_std):
             if labels is not None:
                 labels = Dataset.label_to_one_hot(labels.type(torch.long), self.condition_size)
 
             z, ll = self.forward(data, return_log_likelihood=True, condition=labels)
             loss = (0.5 * torch.sum(z ** 2) - ll) / len(data)
 
-            return loss
+            if _record_std:
+                sigma = z.std().item()
+                return loss, sigma
+            else:
+                return loss
 
         labels = self.condition_size != 0
 
@@ -173,7 +178,7 @@ class SurVAE(Layer):
                 x_train = dataset.sample(batch_size, labels=False)
                 y_train = None
 
-            loss = run(x_train, y_train)
+            loss = run(x_train, y_train, False)
             loss.backward()
 
             optimizer.step()
@@ -181,15 +186,20 @@ class SurVAE(Layer):
 
             # log possibly for period and always for the last iteration
             if (log_period != 0 and epoch % log_period == 0) or epoch == epochs - 1:
-                loss_test = run(x_test, y_test)
+                loss_test = run(x_test, y_test, record_std)
+
+                if record_std:
+                    loss_test, sigma = loss_test
+                else:
+                    sigma = None
 
                 if save_path is None:
                     trained_models[epoch + 1] = TrainingSnapshot(
-                        copy.deepcopy(self.state_dict()), loss.item(), loss_test.item())
+                        copy.deepcopy(self.state_dict()), loss.item(), loss_test.item(), sigma)
                 else:
                     torch.save(self.state_dict(), save_path + f"/epoch_{epoch}.pt")
                     trained_models[epoch + 1] = TrainingSnapshot(
-                        None, loss.item(), loss_test.item())
+                        None, loss.item(), loss_test.item(), sigma)
 
         return trained_models
 

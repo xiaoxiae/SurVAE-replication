@@ -128,7 +128,7 @@ class BijectiveLayer(Layer):
 
         self.hidden_sizes = hidden_sizes
 
-        self.ffnn = FFNN(self.skip_size, self.hidden_sizes, self.non_skip_size + 1)
+        self.ffnn = FFNN(self.skip_size, self.hidden_sizes, 2 * self.non_skip_size)
 
     def forward(self, X: torch.Tensor, condition: torch.Tensor | None = None, return_log_likelihood: bool = False):
         # flatten input
@@ -147,10 +147,10 @@ class BijectiveLayer(Layer):
         # compute coefficients for linear transformation
         coeffs = self.ffnn(ffnn_input)
         # split output into t and pre_s
-        t = coeffs[:, :-1]
-        pre_s = coeffs[:, -1]
-        # compute s_log for log-likelihood contribution and fix dimension; shape is (N,) but should be (N, 1)
-        s_log = tanh(pre_s).unsqueeze(1)
+        t = coeffs[:, :self.non_skip_size]
+        pre_s = coeffs[:, self.non_skip_size:]
+        # compute s_log for log-likelihood contribution
+        s_log = tanh(pre_s)
         # compute s
         s = exp(s_log)
 
@@ -184,10 +184,10 @@ class BijectiveLayer(Layer):
         # compute coefficients for linear transformation
         coeffs = self.ffnn(ffnn_input)
         # split output into t and pre_s
-        t = coeffs[:, :-1]
-        pre_s = coeffs[:, -1]
-        # compute s and fix dimension; shape is (N,) but should be (N, 1)
-        s = exp(tanh(pre_s)).unsqueeze(1)
+        t = coeffs[:, :self.non_skip_size]
+        pre_s = coeffs[:, self.non_skip_size:]
+        # compute s
+        s = exp(tanh(pre_s))
 
         # apply inverse transformation
         new_connection = (non_skip_connections - t) / s
@@ -200,7 +200,7 @@ class BijectiveLayer(Layer):
         return X
 
     def make_conditional(self, size: int):
-        self.ffnn = FFNN(self.skip_size + size, self.hidden_sizes, self.non_skip_size + 1)
+        self.ffnn = FFNN(self.skip_size + size, self.hidden_sizes, 2 * self.non_skip_size)
 
     def in_size(self) -> int | None:
         return self.size

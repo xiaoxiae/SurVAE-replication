@@ -1,0 +1,30 @@
+sv_smnist = SurVAE(
+    [
+        [
+            PermuteAxesLayer((1, 0)),
+            BijectiveLayer((2, N_POINTS), [200, 200]),
+            PermuteAxesLayer((1, 0)),
+            transposition_layer,
+            BijectiveLayer((N_POINTS, 2), [200, 200]),
+            PermutationLayer()
+        ]
+        for _ in range(32)
+    ] +
+    [ReshapeLayer((2, N_POINTS), (2 * N_POINTS,))],
+    name = "SV_SMNIST",
+    condition_size = 10
+)
+
+
+train_log = sv_smnist.train(
+    dataset    = smnist_dataset,
+    batch_size = 200,
+    test_size  = 1_000,
+    epochs     = 100_000,
+    lr         = 1e-3,
+    log_period = 1_000,
+    show_tqdm  = True,
+    lr_decay_params = {'gamma': 0.97, 'step_size': 1_000},
+    save_path = SAVE_PATH,
+    record_std = True,
+)
