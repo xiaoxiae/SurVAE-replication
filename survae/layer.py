@@ -285,8 +285,10 @@ class MaxTheLayer(Layer):
 
             distr = torch.distributions.half_normal.HalfNormal(self.sigma)
 
-            ll_q = - torch.sum(log(torch.ones_like(X) * self.index_probs[max_index])) - torch.sum(
-                distr.log_prob(torch.cat((X[:max_index], X[max_index + 1:]))))
+            ll_q_1 = torch.log(self.index_probs[max_index].sum())
+            ll_q_2 = distr.log_prob(max_val.unsqueeze(-1).expand(X.shape) - X).sum() - distr.log_prob(torch.zeros_like(max_val)).sum()
+
+            ll_q = ll_q_1 + ll_q_2
 
             return max_val, ll_q
         else:

@@ -326,8 +326,8 @@ class MNIST_784(Dataset):
         # self.mnist_images = (mnist.data).double().flatten(start_dim=1).to(survae.DEVICE)
         # self.mnist_labels = mnist.targets.to(survae.DEVICE)
         mnist_images, mnist_labels = _load_mnist()
-        self.mnist_images = torch.tensor(mnist_images)
-        self.mnist_labels = torch.tensor(mnist_labels)
+        self.mnist_images = torch.tensor(mnist_images, dtype=torch.double)
+        self.mnist_labels = torch.tensor(mnist_labels, dtype=torch.long)
 
         self.size = len(self.mnist_labels)
     
