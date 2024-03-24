@@ -1,0 +1,38 @@
+sv_maxpool = SurVAE(
+    [DequantizationLayer()] +
+    [
+        [BijectiveLayer(784, [200, 200]), OrthonormalLayer(784)] # 784 = 28^2
+        for _ in range(5)
+    ] +
+    [MaxPoolingLayer(784, 2, learn_distribution_parameter=True)] + 
+    [
+        [BijectiveLayer(196, [200, 200]), OrthonormalLayer(196)] # 196 = 14^2
+        for _ in range(5)
+    ] +
+    [MaxPoolingLayer(196, 2, learn_distribution_parameter=True)] +
+    [
+        [BijectiveLayer(49, [200, 200]), OrthonormalLayer(49)] # 49 = 7^2
+        for _ in range(5)
+    ] +
+    [MaxPoolingLayerWithHop(49, 3, 2, learn_distribution_parameter=True)] +
+    [
+        [BijectiveLayer(9, [200, 200]), OrthonormalLayer(9)] # 9 = 3^2
+        for _ in range(5)
+    ],
+    name = "SV_MAXPOOL",
+    condition_size = 10,
+)
+
+
+train_log = sv_maxpool.train(
+    dataset    = mnist_dataset,
+    batch_size = 200,
+    test_size  = 1_000,
+    epochs     = 240_000,
+    lr         = 1e-4,
+    log_period = 2_000,
+    show_tqdm  = True,
+    lr_decay_params = None,
+    save_path = SAVE_PATH,
+    record_std=True,
+)
