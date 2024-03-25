@@ -1,0 +1,25 @@
+\asection{Conclusions and Outlook}{}
+
+\asubsection{Conclusions}{Tomáš Sláma}
+
+The synthetic experiments that we replicated worked as expected and drew the same conclusion as the original paper.
+Besides this, the ones we made in addition (conditional) performed poorly due to the lack of symmetries, which reaffirmed the previous conclusion that the \texttt{AbsoluteLayer} works well only for symmetrical data.
+
+Training SpatialMNIST was not successful, most likely due to the combination of not having enough training time and not using transformers instead of the fully connected network for \texttt{BijectiveLayer}.
+
+Since the training parameters were to extensive in the original paper for the image data, we opted to train on the easier MNIST dataset instead.
+Sadly, this was not successful either, mostly due to lack of experience with architectures for training image data.
+
+Parameter degeneracy was initially tested on SBI, which did not work and so we opted to try it on a more simple dataset -- a circle.
+This eventually looked very promising, but we did not finish this due to time constraints.
+
+\asubsection{Teamwork and Obstacles}{Maria Stickel}
+Working as a team was a rewarding and fun experience. Thanks to the fact that we already have been working together on the exercise sheets, setup and organisation was easy and quick. 
+
+The biggest limiting factor of this project was clearly time. When initially choosing the paper, we anticipated three weeks to be enough time to implement and train the models. This has shown to be very optimistic (if not naive) and has lead to worse results by lack of training and possible bugs, which is especially apparent for SpatialMNIST.
+
+\asubsection{Outlook}{Tomáš Sláma}
+
+Further exploring parameter degeneracy would be the next step, since it looked promising in the later tests and could possibly be an improvement over NF.
+
+The image training failed for us but arguably succeeded in the original paper, so determining what was the cause would also be an interesting question.

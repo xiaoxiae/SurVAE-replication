@@ -1,0 +1,96 @@
+\documentclass{article}
+
+\title{\bf Final Project: SurVAE Flows \\ \Large Generative Neural Networks for the Sciences \\[1.5em] \large \url{https://github.com/xiaoxiae/SurVAE-replication}}
+\author{
+\makebox[10em][r]{\textit{Jannis Heising}}\hspace{1em}\makebox[10em][l]{[4028349]} \\
+\makebox[10em][r]{\textit{Tomáš Sláma}}\hspace{1em}\makebox[10em][l]{[3768224]} \\
+\makebox[10em][r]{\textit{Maria Stickel}}\hspace{1em}\makebox[10em][l]{[4040125]}
+}
+\date{\today}
+\setlength{\parindent}{0pt} % zero indent
+\usepackage{parskip}
+\usepackage{hyperref}
+\usepackage{verbatim}
+\usepackage[backend=biber,style=alphabetic]{biblatex}
+\bibliography{resources}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{subcaption} % subfigures
+
+\usepackage{minted}
+
+\setminted[python]
+{
+frame=lines,
+framesep=2mm,
+baselinestretch=1.2,
+fontsize=\footnotesize,
+linenos
+}
+
+\usepackage[htt]{hyphenat}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    filecolor=magenta,      
+    urlcolor=cyan,
+    pdftitle={Final Project: SurVAE Flows},
+    pdfpagemode=FullScreen,
+    }
+
+\theoremstyle{definition}
+\newtheorem{todo}{Todo}
+\newtheorem{experiment}{Experiment}
+\newtheorem{result}{Result}
+
+\usepackage{xcolor}
+
+\newcommand{\ididit}[1]{{\color{gray} \textit{#1}}}%
+
+\newcommand{\dataset}[1]{\makebox[7.5em][r]{[\textit{#1}]}}
+
+\newcommand{\asection}[2]{\section[#1]{{#1}\normalsize \normalfont \hfill \ididit{#2}}}%
+\newcommand{\asubsection}[2]{\subsection[#1]{{#1}\normalsize \normalfont \hfill \ididit{#2}}}%
+\newcommand{\asubsubsection}[2]{\subsubsection[#1]{{#1}\normalsize \normalfont \hfill \ididit{#2}}}%
+
+\newcommand{\dd}{{\rm d}} % mathematical symbol for total derivatives
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+\newpage
+
+{\small \tableofcontents}
+
+\newpage
+
+\begin{abstract}
+
+The goal of this work was to reproduce the results of \cite{nielsen2020survae}. Their paper presents a modular framework SurVAE Flows of composable bijective and stochastic layers that combine the capabilities of normalizing flows and variational autoencoders. Both these network architectures are trying to model complicated density functions, but suffer from opposite contraints. 
+
+We have reproduced a large subset of the results of the paper (excluding those with high training requirements and those that used transformers), as well as implementing a number of novel layers, adding support for conditional training, exploring parameter degeneracy and the use of the SurVAE in SBI models.
+\end{abstract}
+
+\newpage
+
+\include{sections/introduction}
+\include{sections/background}
+\include{sections/methods}
+\include{sections/experiments_and_results}
+\include{sections/conclusions_and_outlook}
+
+\newpage
+
+\nocite{*}
+\printbibliography[heading=bibintoc,title={Bibliography}]
+
+\end{document}

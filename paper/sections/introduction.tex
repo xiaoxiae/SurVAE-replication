@@ -1,0 +1,13 @@
+\asection{Introduction}{Jannis Heising}
+
+In this report, we present our endeavour to replicate the results of \cite{nielsen2020survae}, in which the SurVAE model is proposed that aims to combine normalizing flows and variational auto-encoders to achieve the best of both worlds. Furthermore, the model is very flexible and allows for a large variety of architectures. In the paper, the SurVAE model is tested on three types of data:
+
+\begin{itemize}
+\item Two-dimensional synthetic data,
+\item Point cloud data in the form of SpatialMNIST,
+\item Image data.
+\end{itemize}
+
+After developing the necessary background (Section~\ref{sec:background}) and detailing the methods employed (Section~\ref{sec:methods}), we replicate the tests described in \cite{nielsen2020survae} to the best of our abilities (Section~\ref{sec:exp_and_results}). Additionally, we explore the possibility of using the SurVAE framework in the presence of parameter degeneracy, a subject that traditional normalizing flows are known to struggle with.
+
+This report serves as the final exam to the lecture ``Generative Neural Networks for the Sciences", held by Prof. Ullrich Köthe in the winter semester 2023/24 at Heidelberg University.
