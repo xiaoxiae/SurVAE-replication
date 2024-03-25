@@ -1,4 +1,5 @@
 Same loss curve as overnight-2, but samples are worse (putting it lightly).
 Loss must be screwed, try weighing first loss term with 0.45 (learned sigma).
 
-This run is not included in the report!
+This run is not mentioned in the report! I didn't deem it noteworthy because it was a rerun of test 2 without the BijectiveLayer fix
+(because I screwed up the model saving and just wanted to recreate that result. I failed, by the way).

@@ -1,0 +1,23 @@
+sv2_circle1d = SurVAE( # uses Max at the end
+    [
+        [BijectiveLayer(2, [200, 200]), OrthonormalLayer(2)]
+        for _ in range(20)
+    ] +
+    [MaxTheLayer(2, learn_index_probs=True, learn_sigma=True)],
+    name = "SV_CIRCLE_1D"
+)
+
+
+train_log_sv2 = sv2_circle1d.train(
+    dataset=circle1d_dataset,
+    batch_size=200,
+    test_size=1_000,
+    epochs=10_000,
+    lr=1e-3,
+    log_period=100,
+    use_one_hot=False,
+    lr_decay_params={'gamma': 0.9, 'step_size': 1_000},
+    show_tqdm=True,
+    save_path=None,
+    record_std=True,
+)

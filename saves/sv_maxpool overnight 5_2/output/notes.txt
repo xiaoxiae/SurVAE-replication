@@ -1,0 +1,1 @@
+This was a continuation of the previous training session. I increased the learning rate from where the previous thing left off because the loss seemed to stagnate too fast.
