@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 from matplotlib import pyplot as plt
 
 from survae import Dataset
@@ -9,7 +10,7 @@ SAMPLE_COUNT = 50_000
 BINS = 100
 
 
-def plot_models(models: TrainedModels, datasets: list[Dataset], sample_count=SAMPLE_COUNT, bins=BINS):
+def plot_models(models: TrainedModels, datasets: list[Dataset], sample_count=SAMPLE_COUNT, bins=BINS, bounds_offset=0.25):
     """Plot the results for trained models on the given datasets."""
     model_count = max([j for _, j in models]) + 1
 
@@ -20,7 +21,14 @@ def plot_models(models: TrainedModels, datasets: list[Dataset], sample_count=SAM
     for i, dataset in enumerate(datasets):
         X = dataset.sample(sample_count).cpu().numpy()
 
-        axs[i, 0].hist2d(X[:, 0], X[:, 1], bins=bins)
+        # Disgusting last-minute hacks
+        bounds = dataset.get_bounds().type(torch.float)
+        bounds[:,0] -= bounds_offset
+        bounds[:,1] += bounds_offset
+        bounds[0] += dataset._bounds_offset_hack[0]
+        bounds[1] += dataset._bounds_offset_hack[1]
+
+        axs[i, 0].hist2d(X[:, 0], X[:, 1], bins=bins, range=bounds.tolist())
         axs[i, 0].set_title(f'Data / {dataset.get_name()}')
 
     # Iterate over datasets and create heatmaps
@@ -30,8 +38,16 @@ def plot_models(models: TrainedModels, datasets: list[Dataset], sample_count=SAM
 
             X = model.sample(sample_count).cpu().numpy()
 
-            axs[i, j + 1].hist2d(X[:, 0], X[:, 1], bins=bins)
+            # Disgusting last-minute hacks
+            bounds = dataset.get_bounds().type(torch.float)
+            bounds[:,0] -= bounds_offset
+            bounds[:,1] += bounds_offset
+            bounds[0] += dataset._bounds_offset_hack[0]
+            bounds[1] += dataset._bounds_offset_hack[1]
+
+            axs[i, j + 1].hist2d(X[:, 0], X[:, 1], bins=bins, range=bounds.tolist())
             axs[i, j + 1].set_title(f'{model.get_name()} / {dataset.get_name()}')
+
 
     # Adjust layout
     plt.tight_layout()

@@ -10,7 +10,7 @@ TrainedModels = dict[tuple[int, int], tuple[SurVAE, dict[int, TrainingSnapshot]]
 
 def train_models_conditional(model_generators: list[Callable[[], SurVAE] | Callable[[int], SurVAE]],
                              datasets: list[Dataset], batch_size=1_000, test_size=10_000, epochs=1_000, lr=0.001,
-                             log_period=10) -> TrainedModels:
+                             log_period=10, **kwargs) -> TrainedModels:
     """Train models on datasets."""
     models = {}
 
@@ -26,6 +26,7 @@ def train_models_conditional(model_generators: list[Callable[[], SurVAE] | Calla
                 results = model.train(
                     dataset, batch_size=batch_size, test_size=test_size,
                     epochs=epochs, lr=lr, log_period=log_period,
+                    **kwargs,
                 )
 
                 models[i, j] = (model, results)
@@ -36,7 +37,4 @@ def train_models_conditional(model_generators: list[Callable[[], SurVAE] | Calla
 
 
 def train_models(*args, **kwargs):
-    # TODO: tom did this to not fuck up possible merge but the previous method should juts be train_models
     return train_models_conditional(*args, **kwargs)
-
-

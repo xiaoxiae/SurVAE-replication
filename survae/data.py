@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from functools import cache
 
 import numpy as np
 import torch
@@ -24,6 +23,8 @@ class Dataset(ABC):
 
         self._name = name
 
+        self._bounds_offset_hack = torch.tensor([0.0, 0.0])
+
     def get_name(self) -> str:
         """Get the dataset name."""
         return self._name or self.__class__.__name__
@@ -35,6 +36,10 @@ class Dataset(ABC):
 
     @abstractmethod
     def __call__(self, n: int) -> tuple[torch.Tensor, torch.Tensor]:
+        pass
+
+    def get_bounds(self) -> torch.tensor:
+        """Get the bounds of the dataset (i.e. where it should be visualized). Defaults to the empty center."""
         pass
 
     def sample(self, n: int, labels=False):
@@ -74,6 +79,12 @@ class Dataset(ABC):
     def offset(self, vector: torch.Tensor) -> Dataset:
         """Apply a modifier that offsets all values of the dataset by a given vector."""
         self.modifiers.append(lambda data: data + vector)
+
+        try:
+            self._bounds_offset_hack += vector
+        except Exception:
+            pass
+
         return self
 
     @classmethod
@@ -111,12 +122,15 @@ class Ngon(Dataset):
         cov = np.array([[self._noise, 0], [0, self._noise]])
 
         X = np.array(
-            [(np.cos(i * 2 * np.pi / self._k), np.sin(i * 2 * np.pi / self._k)) for i in indexes])  # exact corners
+            [(np.cos(i * 2 * np.pi / self._k), np.sin(i * 2 * np.pi / self._k)) for i in indexes])
 
         X += np.random.multivariate_normal([0.0, 0.0], cov, n)
         y = np.array([i % self._k for i in indexes], dtype=int)
 
         return torch.tensor(X), torch.tensor(y).int()
+
+    def get_bounds(self):
+        return torch.tensor([(-1, 1), (-1, 1)])
 
 
 class Corners(Dataset):
@@ -175,6 +189,56 @@ class Corners(Dataset):
 
         return X, y.int()
 
+    def get_bounds(self):
+        w = self._middle_space + self._length
+        return torch.tensor([(-w, w) for _ in range(2)])
+
+
+def _circle(n, noise, radius, angles=None):
+    if angles is None:
+        angles = np.random.uniform(0, 2 * np.pi, n)
+
+    # Convert polar coordinates to Cartesian coordinates
+    x = np.cos(angles)
+    y = np.sin(angles)
+
+    # Add Gaussian noise to coordinates
+    x += np.random.normal(0, noise, n)
+    y += np.random.normal(0, noise, n)
+
+    return np.column_stack((x, y)) * radius
+
+
+class Smiley(Dataset):
+    """Dataset class that generates a smiley face when sampled."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def get_categories(self) -> int:
+        """Get the number of categories of the dataset."""
+        return 3
+
+    def __call__(self, n: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """Generate a smiley face."""
+        parts = 3
+
+        # Generate random group sizes
+        group_sizes = np.random.multinomial(n, [0.7, 0.15, 0.15])
+
+        return torch.tensor(np.concatenate(
+            [
+                _circle(group_sizes[0], noise=0.05, radius=1,
+                        angles=np.random.uniform(np.pi * 6 / 5, np.pi * 9 / 5, group_sizes[0])),
+                _circle(group_sizes[1], noise=0.3, radius=0.1) + np.array([-0.25, -0.25]),
+                _circle(group_sizes[2], noise=0.3, radius=0.1) + np.array([+0.25, -0.25]),
+            ]
+        )), torch.tensor([0] * group_sizes[0] + [1] * group_sizes[1] + [2] * group_sizes[2]).int()
+
+    def get_bounds(self) -> tuple[tuple[float, float], tuple[float, float]] | None:
+        """Get the bounds of the dataset."""
+        return torch.tensor([(-1.0, 1.0), (-1.0, 0.1 - 0.25)])
+
 
 class Circles(Dataset):
     """
@@ -200,20 +264,6 @@ class Circles(Dataset):
         return self._k
 
     def __call__(self, n: int):
-        def _circle(n, noise, radius):
-            # Generate random angles
-            angles = np.random.uniform(0, 2 * np.pi, n)
-
-            # Convert polar coordinates to Cartesian coordinates
-            x = np.cos(angles)
-            y = np.sin(angles)
-
-            # Add Gaussian noise to coordinates
-            x += np.random.normal(0, noise, n)
-            y += np.random.normal(0, noise, n)
-
-            return np.column_stack((x, y)) * radius
-
         remainder = n % self._k
 
         points = []
@@ -241,6 +291,10 @@ class Circles(Dataset):
 
         return torch.tensor(np.concatenate(points)), torch.tensor(categories).int()
 
+    def get_bounds(self):
+        w = self._circle_radius + self._circle_center_radius
+        return torch.tensor([(-w, w) for _ in range(2)])
+
 
 class Checkerboard(Dataset):
     """
@@ -256,7 +310,7 @@ class Checkerboard(Dataset):
         self._k = k ** 2
 
     def get_categories(self) -> int:
-        return self._k ** 2
+        return self._k * 2
 
     def __call__(self, n: int):
         # local tile coordinates
@@ -265,6 +319,8 @@ class Checkerboard(Dataset):
 
         points = np.column_stack((x_coords, y_coords))
         categories = []
+        categories_count = 0
+        categories_map = dict()
 
         # move from local to global coordinates randomly
         for i in range(n):
@@ -274,7 +330,11 @@ class Checkerboard(Dataset):
             row_offset = row
             column_offset = (column * 2 + (row_offset % 2)) % self._k
 
-            categories.append(row * self._k + column)
+            if (row_offset, column_offset) not in categories_map:
+                categories_map[(row_offset, column_offset)] = categories_count
+                categories_count += 1
+
+            categories.append(categories_map[(row_offset, column_offset)])
 
             points[i][0] += row_offset
             points[i][1] += column_offset
@@ -285,6 +345,9 @@ class Checkerboard(Dataset):
         X = torch.tensor(points)
 
         return X, torch.tensor(categories).int()
+
+    def get_bounds(self):
+        return torch.tensor([(-self._k // 2, self._k // 2) for _ in range(2)])
 
 
 def _load_mnist() -> tuple[np.ndarray, np.ndarray]:
@@ -308,15 +371,15 @@ def _load_mnist() -> tuple[np.ndarray, np.ndarray]:
 
         mnist_images = np.array((mnist.data).double().flatten(start_dim=1))
         mnist_labels = np.array(mnist.targets)
-    
-    return mnist_images, mnist_labels
 
+    return mnist_images, mnist_labels
 
 
 class MNIST_784(Dataset):
     """
     Load the 28x28 MNIST dataset.
     """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -330,10 +393,10 @@ class MNIST_784(Dataset):
         self.mnist_labels = torch.tensor(mnist_labels)
 
         self.size = len(self.mnist_labels)
-    
+
     def get_categories(self) -> int:
         return 10
-    
+
     def __call__(self, n: int):
         # if n > self.size, elements may be sampled multiple times
         perm = (torch.randperm(max(n, self.size)) % self.size)[:n]
@@ -462,6 +525,10 @@ class Spiral(Dataset):
 
         return X, y
 
+    def get_bounds(self):
+        # going to jail for this
+        return torch.tensor([(-5, 5), (-4.5, 4.5)])
+
 
 class Moons(Dataset):
     """
@@ -484,6 +551,10 @@ class Moons(Dataset):
     def __call__(self, n: int):
         X, y = make_moons(n_samples=n, noise=self._noise, random_state=42)
         return torch.tensor(X), torch.tensor(y).int()
+
+    def get_bounds(self):
+        # also going to jail for this
+        return torch.tensor([(-1, 2), (-1, 1.5)])
 
 
 class SplitLine(Dataset):
@@ -528,6 +599,10 @@ class SplitLine(Dataset):
 
         return X, y.int()
 
+    def get_bounds(self):
+        # yup, this too
+        return torch.tensor([(-2, 2), (-2 - self._offset, 2 + self._offset)])
+
 
 class Gradient(Dataset):
     """
@@ -564,17 +639,21 @@ class Gradient(Dataset):
 
         return X, y.int()
 
+    def get_bounds(self):
+        # yup, this too
+        return torch.tensor([(0, 1) for _ in range(2)])
+
 
 class SIR_Basic(Dataset):
     def __init__(self, shuffle=True, name=None, **kwargs):
         """kwargs are passed to the simulation."""
         super().__init__(shuffle, name)
         self.kwargs = kwargs
-    
+
     def get_categories(self) -> int:
         """Not every kind of label is a one-hot encoding, Tom."""
         raise TypeError("SIR dataset labels don't have categories!")
-    
+
     def _sample_parameters(self, n_samples: int) -> torch.Tensor:
         '''
         Generate sensible parameter values for the simulation. Uses Gaussian distribution for all three parameters.
@@ -587,7 +666,7 @@ class SIR_Basic(Dataset):
         '''
         # Priors of each parameter
         lam = torch.normal(0.5, 0.1, size=(n_samples,))
-        mu  = torch.normal(0.25, 0.1, size=(n_samples,))
+        mu = torch.normal(0.25, 0.1, size=(n_samples,))
         I_0 = torch.normal(0.06, 0.05, size=(n_samples,))
 
         # I_0 must not be larger than 1
@@ -599,7 +678,7 @@ class SIR_Basic(Dataset):
         Y = torch.abs(Y)
 
         return Y
-    
+
     def _simulate(self, Y: torch.Tensor, steps_per_day: int = 10, n_days: int = 100, flatten: bool = True):
         '''
         Simulates the most basic SIR model, given parameters lambda, mu, and I_0.
@@ -619,11 +698,11 @@ class SIR_Basic(Dataset):
         mu = Y[:, 1]
         I_0 = Y[:, 2]
 
-        h = 1 / steps_per_day      # step size
-        n = len(Y)                 # number of samples, i.e. simulations
-        t = steps_per_day * n_days # number of simulation steps
+        h = 1 / steps_per_day  # step size
+        n = len(Y)  # number of samples, i.e. simulations
+        t = steps_per_day * n_days  # number of simulation steps
 
-        C = torch.zeros((n, t+1, 2)) # contains S & R for each simulation and timestep
+        C = torch.zeros((n, t + 1, 2))  # contains S & R for each simulation and timestep
         C[:, 0, 0] = 1 - I_0
 
         for i in range(t):
@@ -637,23 +716,23 @@ class SIR_Basic(Dataset):
             dR = mu * I
 
             # compute one step
-            C[:, i+1, 0] = S + h * dS
-            C[:, i+1, 1] = R + h * dR
-        
+            C[:, i + 1, 0] = S + h * dS
+            C[:, i + 1, 1] = R + h * dR
+
         # compute the desired output
         X = C[:, 1::steps_per_day] - C[:, :-1:steps_per_day]
-        X[:, :, 0] *= -1 # convention necessitates that dS change sign
+        X[:, :, 0] *= -1  # convention necessitates that dS change sign
 
         if flatten:
             X = X.flatten(start_dim=1)
 
         return X
-    
+
     def __call__(self, n: int) -> tuple[torch.Tensor, torch.Tensor]:
         Y = self._sample_parameters(n)
         X = self._simulate(Y, **self.kwargs)
 
-        return Y, X # the parameters are the data and the simulation is the condition!
+        return Y, X  # the parameters are the data and the simulation is the condition!
 
 
 class SIR_Degenerate(Dataset):
@@ -662,12 +741,12 @@ class SIR_Degenerate(Dataset):
         super().__init__(shuffle, name)
 
         self.kwargs = kwargs
-    
+
     def get_categories(self) -> int:
         """Not every kind of label is a one-hot encoding, Tom."""
         raise TypeError("Degenerate SIR dataset labels don't have categories!")
-    
-    def _sample_parameters(self, n_samples:int) -> torch.Tensor:
+
+    def _sample_parameters(self, n_samples: int) -> torch.Tensor:
         '''
         Generate sensible parameter values for the simulation. Uses Gaussian distribution for all parameters.
         In contrast to the non-degenerate case, this function generates two values for lambda.
@@ -682,8 +761,8 @@ class SIR_Degenerate(Dataset):
         # The values for lam1 and lam2 are chosen such that the distribution of lam1 * lam2
         # closely resembles that of lam from SIR_Basic
         lam1 = torch.normal(8 / 10, 0.06, size=(n_samples,))
-        lam2 = torch.normal(5 /  8, 0.11, size=(n_samples,))
-        mu  = torch.normal(0.25, 0.1, size=(n_samples,))
+        lam2 = torch.normal(5 / 8, 0.11, size=(n_samples,))
+        mu = torch.normal(0.25, 0.1, size=(n_samples,))
         I_0 = torch.normal(0.06, 0.05, size=(n_samples,))
 
         # I_0 must not be larger than 1
@@ -695,7 +774,7 @@ class SIR_Degenerate(Dataset):
         Y = torch.abs(Y)
 
         return Y
-    
+
     def _simulate(self, Y: torch.Tensor, steps_per_day: int = 10, n_days: int = 100, flatten: bool = True):
         '''
         Simulates the most basic SIR model, given parameters lambda1, lambda2, mu, and I_0.
@@ -717,11 +796,11 @@ class SIR_Degenerate(Dataset):
         mu = Y[:, 2]
         I_0 = Y[:, 3]
 
-        h = 1 / steps_per_day      # step size
-        n = len(Y)                 # number of samples, i.e. simulations
-        t = steps_per_day * n_days # number of simulation steps
+        h = 1 / steps_per_day  # step size
+        n = len(Y)  # number of samples, i.e. simulations
+        t = steps_per_day * n_days  # number of simulation steps
 
-        C = torch.zeros((n, t+1, 2)) # contains S & R for each simulation and timestep
+        C = torch.zeros((n, t + 1, 2))  # contains S & R for each simulation and timestep
         C[:, 0, 0] = 1 - I_0
 
         for i in range(t):
@@ -735,28 +814,29 @@ class SIR_Degenerate(Dataset):
             dR = mu * I
 
             # compute one step
-            C[:, i+1, 0] = S + h * dS
-            C[:, i+1, 1] = R + h * dR
-        
+            C[:, i + 1, 0] = S + h * dS
+            C[:, i + 1, 1] = R + h * dR
+
         # compute the desired output
         X = C[:, 1::steps_per_day] - C[:, :-1:steps_per_day]
-        X[:, :, 0] *= -1 # convention necessitates that dS change sign
+        X[:, :, 0] *= -1  # convention necessitates that dS change sign
 
         if flatten:
             X = X.flatten(start_dim=1)
 
         return X
-    
+
     def __call__(self, n: int) -> tuple[torch.Tensor, torch.Tensor]:
         Y = self._sample_parameters(n)
         X = self._simulate(Y, **self.kwargs)
 
-        return Y, X # the parameters are the data and the simulation is the condition!
+        return Y, X  # the parameters are the data and the simulation is the condition!
 
 
 # (Jannis) I had to change these lists to only be created when they're actually needed because for some reason
 # my PC can't load MNIST via _fetch_openml, and since this file is loaded in survae.__init__ I couldn't do
 # anything without it crashing :(
-TWO_D_DATASETS = lambda: [Ngon(), Corners(), Circles(), Checkerboard(), Spiral(), Moons(), SplitLine(), Gradient()]
+TWO_D_DATASETS = lambda: [Ngon(), Corners(), Circles(), Checkerboard(), Spiral(), Moons(), SplitLine(), Gradient(),
+                          Smiley()]
 MULTI_D_DATASETS = lambda: [SpatialMNIST()]
 ALL_DATASETS = lambda: TWO_D_DATASETS() + MULTI_D_DATASETS()
