@@ -10,12 +10,16 @@ A repliaction of "SurVAE Flows: Surjections to Bridge the Gap between VAEs and F
 The repository contains the following:
 
 ```
-.
 ├── assets     # relevant PDFs
 ├── notebooks  # Jupyter notebooks
 ├── saves      # save states for MNIST
 └── survae     # source code
 ```
+
+## Running the code
+
+1. install the requirements (`pip install -r requirements.txt`)
+2. open and  run any notebook in `notebooks/`
 
 
 ## Tests
